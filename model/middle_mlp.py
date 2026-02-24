@@ -1,0 +1,28 @@
+import torch
+import torch.nn as nn
+from e3nn.o3 import Irreps, Linear
+
+
+class MiddleMLP(nn.Module):
+    def __init__(
+        self,
+        scaler_dim_in: int,
+        scaler_dim_hidden: str,
+        scaler_dim_out: int,
+        num_hidden_layers: int,
+        act: nn.Module = nn.SiLU(),
+    ):
+        super().__init__()
+        self.middle_mlp = nn.ModuleList()
+        self.act = act
+        assert num_hidden_layers > 0, "num_hidden_layers must be greater than 0"
+
+        self.middle_mlp.append(Linear(scaler_dim_in, scaler_dim_hidden))
+        for _ in range(num_hidden_layers - 1):
+            self.middle_mlp.append(Linear(scaler_dim_hidden, scaler_dim_hidden))
+        self.middle_mlp.append(Linear(scaler_dim_hidden, scaler_dim_out))
+
+    def forward(self, scalar_input: torch.Tensor) -> torch.Tensor:
+        for layer in self.middle_mlp:
+            scalar_input = self.act(layer(scalar_input))
+        return scalar_input

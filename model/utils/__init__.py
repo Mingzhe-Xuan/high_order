@@ -1,0 +1,1 @@
+from .add_irreps_tensor import add_irreps_tensor
