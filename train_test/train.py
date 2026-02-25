@@ -5,6 +5,8 @@ import os
 from typing import Union
 from e3nn.o3 import Irreps
 
+from ..model.utils import get_irreps_from_ns_nv_lmax
+
 from ...data import (
     get_mp_dataloader,
     get_scalar_dataloaders_split,
@@ -24,6 +26,261 @@ from ..model import (
 )
 
 
+def _create_scalar_dataloaders(
+    path_name_dict,
+    scalar_properties,
+    cutoff,
+    train_val_test,
+    seed,
+    batch_size,
+    pin_memory,
+    num_workers,
+):
+    """Create dataloaders for scalar properties."""
+    dataloaders = {}
+    for prop in scalar_properties:
+        trainset, valset, testset = get_scalar_dataloaders_split(
+            path=path_name_dict[prop],
+            property_name=prop,
+            cutoff=cutoff,
+            train_val_test=train_val_test,
+            seed=seed,
+            batch_size=batch_size,
+            pin_memory=pin_memory,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+        dataloaders[f"{prop}_trainset"] = trainset
+        dataloaders[f"{prop}_valset"] = valset
+        dataloaders[f"{prop}_testset"] = testset
+    return dataloaders
+
+
+def _create_tensor_dataloaders(
+    path_name_dict,
+    tensor_properties,
+    cutoff,
+    train_val_test,
+    seed,
+    batch_size,
+    pin_memory,
+    num_workers,
+):
+    """Create dataloaders for tensor properties."""
+    dataloaders = {}
+    for prop in tensor_properties:
+        trainset, valset, testset = get_tensor_dataloaders_split(
+            path=path_name_dict[prop],
+            property_name=prop,
+            cutoff=cutoff,
+            train_val_test=train_val_test,
+            seed=seed,
+            batch_size=batch_size,
+            pin_memory=pin_memory,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+        dataloaders[f"{prop}_trainset"] = trainset
+        dataloaders[f"{prop}_valset"] = valset
+        dataloaders[f"{prop}_testset"] = testset
+    return dataloaders
+
+
+def _create_shared_components(
+    dist_emb_func,
+    embed_dim,
+    max_atom_type,
+    cutoff,
+    inv_update_method,
+    num_inv_layers,
+    num_equi_layers,
+    equi_update_method,
+    tp_method,
+    scalar_dim,
+    vec_dim,
+    num_final_hidden_layers,
+    final_scalar_hidden_dim,
+    final_vec_hidden_dim,
+    final_scalar_out_dim,
+    final_vec_out_dim,
+):
+    """Create shared model components."""
+    # Shared embedding layer
+    embedding_layer = EmbeddingLayer(
+        dist_emb_func=dist_emb_func,
+        embed_dim=embed_dim,
+        max_atom_type=max_atom_type,
+        cutoff=cutoff,
+    )
+
+    # Shared invariant layers
+    invariant_layers = nn.ModuleList(
+        [
+            InvariantLayer(update_method=inv_update_method, scalar_dim=embed_dim)
+            for _ in range(num_inv_layers)
+        ]
+    )
+
+    # Build irreps list
+    irreps_list = [f"{scalar_dim}x0e"]
+    l_max = num_equi_layers
+    for l in range(1, l_max + 1):
+        p = "e" if l % 2 == 0 else "o"
+        irreps_list.append(f"{scalar_dim}x0e+{vec_dim}x{l}{p}")
+
+    # Shared equivariant layers
+    equivariant_layers = nn.ModuleList(
+        [
+            EquivariantLayer(
+                update_method=equi_update_method,
+                irreps_in=irreps_list[i],
+                irreps_out=irreps_list[i + 1],
+                tp_method=tp_method,
+                residual=True,
+            )
+            for i in range(num_equi_layers)
+        ]
+    )
+
+    final_irreps_hidden = get_irreps_from_ns_nv_lmax(
+        ns=final_scalar_hidden_dim, nv=final_vec_hidden_dim, l_max=l_max
+    )
+    final_irreps_out = get_irreps_from_ns_nv_lmax(
+        ns=final_scalar_out_dim, nv=final_vec_out_dim, l_max=l_max
+    )
+
+    return (
+        embedding_layer,
+        invariant_layers,
+        equivariant_layers,
+        irreps_list,
+        final_irreps_hidden,
+        final_irreps_out,
+        l_max,
+    )
+
+
+def _create_scalar_models(
+    scalar_properties,
+    embedding_layer,
+    invariant_layers,
+    equivariant_layers,
+    irreps_list,
+    final_irreps_hidden,
+    final_irreps_out,
+    final_pooling,
+    embed_dim,
+    scalar_dim,
+    middle_scalar_hidden_dim,
+    num_middle_hidden_layers,
+    num_final_hidden_layers,
+):
+    """Create models for scalar properties."""
+    models = {}
+
+    for prop in scalar_properties:
+        # Create model components for each property
+        middle_mlp = MiddleMLP(
+            scalar_dim_in=embed_dim,
+            scalar_dim_hidden=middle_scalar_hidden_dim,
+            scalar_dim_out=scalar_dim,
+            num_hidden_layers=num_middle_hidden_layers,
+        )
+
+        final_mlp = FinalMLP(
+            irreps_in=irreps_list[-1],
+            irreps_hidden=final_irreps_hidden,
+            irreps_out=final_irreps_out,
+            num_hidden_layers=num_final_hidden_layers,
+        )
+
+        readout_layer = ReadoutLayer(
+            l_max=0,
+            symmetry=None,
+        )
+
+        model = Model(
+            embedding_layer=embedding_layer,
+            invariant_layers=invariant_layers,
+            middle_mlp=middle_mlp,
+            equivariant_layers=equivariant_layers,
+            final_mlp=final_mlp,
+            readout_layer=readout_layer,
+            self_train=False,
+            final_pooling=final_pooling,
+        )
+
+        models[f"{prop}_model"] = model
+
+    return models
+
+
+def _create_tensor_models(
+    tensor_properties,
+    embedding_layer,
+    invariant_layers,
+    equivariant_layers,
+    irreps_list,
+    final_irreps_hidden,
+    final_irreps_out,
+    final_pooling,
+    scalar_dim,
+    vec_dim,
+    middle_scalar_hidden_dim,
+    num_middle_hidden_layers,
+    num_final_hidden_layers,
+):
+    """Create models for tensor properties."""
+    models = {}
+
+    # Define readout layer configurations for different tensor properties
+    readout_configs = {
+        "dielectric": {"l_max": 2, "symmetry": "ij=ji"},
+        "dielectric_ionic": {"l_max": 2, "symmetry": "ij=ji"},
+        "elastic_sym_kbar": {"l_max": 4, "symmetry": "ijkl=jikl=ijlk=klij"},
+        "elastic_total_kbar": {"l_max": 4, "symmetry": "ijkl=jikl=ijlk=klij"},
+        "piezoelectric_C_m2": {"l_max": 2, "symmetry": "i,jk=kj"},
+        "piezoelectric_e_Angst": {"l_max": 2, "symmetry": "i,jk=kj"},
+    }
+
+    for prop in tensor_properties:
+        # Create model components for each property
+        middle_mlp = MiddleMLP(
+            scalar_dim_in=irreps_list[-1],  # Different from scalar models
+            scalar_dim_hidden=middle_scalar_hidden_dim,
+            scalar_dim_out=scalar_dim,
+            num_hidden_layers=num_middle_hidden_layers,
+        )
+
+        final_mlp = FinalMLP(
+            irreps_in=irreps_list[-1],
+            irreps_hidden=final_irreps_hidden,
+            irreps_out=final_irreps_out,
+            num_hidden_layers=num_final_hidden_layers,
+        )
+
+        readout_config = readout_configs.get(prop, {"l_max": 2, "symmetry": None})
+        readout_layer = ReadoutLayer(
+            l_max=readout_config["l_max"],
+            symmetry=readout_config["symmetry"],
+        )
+
+        model = Model(
+            embedding_layer=embedding_layer,
+            invariant_layers=invariant_layers,
+            middle_mlp=middle_mlp,
+            equivariant_layers=equivariant_layers,
+            final_mlp=final_mlp,
+            readout_layer=readout_layer,
+            self_train=False,
+            final_pooling=final_pooling,
+        )
+
+        models[f"{prop}_model"] = model
+
+    return models
+
+
 def train(
     # random seed
     seed: int = 42,
@@ -38,7 +295,7 @@ def train(
     # inv_dim: int = 64,
     num_inv_layers: int = 3,
     # middle_mlp
-    middle_scalar_hidden_dim: int = 128, # hidden dim should be 2 times of the input by convention
+    middle_scalar_hidden_dim: int = 128,  # hidden dim should be 2 times of the input by convention
     num_middle_hidden_layers: int = 1,
     # equivariant layers
     equi_update_method: str = "tpconv_with_edge",
@@ -54,6 +311,10 @@ def train(
     final_scalar_out_dim: int = 16,
     final_vec_out_dim: int = 8,
     # train
+    need_self_train: bool = True,
+    need_scalar_train: bool = True,
+    need_tensor_train: bool = True,
+    final_pooling: bool = False,
     train_val_test: tuple[float, float, float] = (0.8, 0.1, 0.1),
     batch_size: int = 32,
     num_workers: int = 0,
@@ -85,284 +346,231 @@ def train(
     # 1. self trainset
     # 2. scalar trainset, valset, testset
     # 3. tensor trainset, valset, testset
-    self_trainset = get_mp_dataloader(
-        cutoff=cutoff,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-
     with open("data/dataloaders/path_name.json") as f:
         path_name_dict = json.load(f)
 
-    scalar_properties = [
-        "formation_energy",
-        "opt_bandgap",
-        "total_energy",
-        "ehull",
-        "mbj_bandgap",
-        "bandgap",
-        "e_form",
-        "bulk_modulus",
-        "shear_modulus",
-    ]
-    formation_energy_trainset, formation_energy_valset, formation_energy_testset = (
-        get_scalar_dataloaders_split(
-            path=path_name_dict["formation_energy"],
-            property_name="formation_energy",
+    if need_self_train:
+        self_trainset = get_mp_dataloader(
             cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
             batch_size=batch_size,
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
         )
-    )
-    opt_bandgap_trainset, opt_bandgap_valset, opt_bandgap_testset = (
-        get_scalar_dataloaders_split(
-            path=path_name_dict["opt_bandgap"],
-            property_name="opt_bandgap",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    total_energy_trainset, total_energy_valset, total_energy_testset = (
-        get_scalar_dataloaders_split(
-            path=path_name_dict["total_energy"],
-            property_name="total_energy",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    ehull_trainset, ehull_valset, ehull_testset = get_scalar_dataloaders_split(
-        path=path_name_dict["ehull"],
-        property_name="ehull",
-        cutoff=cutoff,
-        train_val_test=train_val_test,
-        seed=seed,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    mbj_bandgap_trainset, mbj_bandgap_valset, mbj_bandgap_testset = (
-        get_scalar_dataloaders_split(
-            path=path_name_dict["mbj_bandgap"],
-            property_name="mbj_bandgap",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    bandgap_trainset, bandgap_valset, bandgap_testset = get_scalar_dataloaders_split(
-        path=path_name_dict["bandgap"],
-        property_name="bandgap",
-        cutoff=cutoff,
-        train_val_test=train_val_test,
-        seed=seed,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    e_form_trainset, e_form_valset, e_form_testset = get_scalar_dataloaders_split(
-        path=path_name_dict["e_form"],
-        property_name="e_form",
-        cutoff=cutoff,
-        train_val_test=train_val_test,
-        seed=seed,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    bulk_modulus_trainset, bulk_modulus_valset, bulk_modulus_testset = (
-        get_scalar_dataloaders_split(
-            path=path_name_dict["bulk_modulus"],
-            property_name="bulk_modulus",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    shear_modulus_trainset, shear_modulus_valset, shear_modulus_testset = (
-        get_scalar_dataloaders_split(
-            path=path_name_dict["shear_modulus"],
-            property_name="shear_modulus",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
 
-    tensor_properties = [
-        "dielectric",
-        "dielectric_ionic",
-        "elastic_sym_kbar",
-        "elastic_total_kbar",
-        "piezoelectric_C_m2",
-        "piezoelectric_e_Angst",
-    ]
-    dielectric_trainset, dielectric_valset, dielectric_testset = (
-        get_tensor_dataloaders_split(
-            path=path_name_dict["dielectric"],
-            property_name="dielectric",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    dielectric_ionic_trainset, dielectric_ionic_valset, dielectric_ionic_testset = (
-        get_tensor_dataloaders_split(
-            path=path_name_dict["dielectric_ionic"],
-            property_name="dielectric_ionic",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    elastic_sym_kbar_trainset, elastic_sym_kbar_valset, elastic_sym_kbar_testset = (
-        get_tensor_dataloaders_split(
-            path=path_name_dict["elastic_sym_kbar"],
-            property_name="elastic_sym_kbar",
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-    )
-    (
-        elastic_total_kbar_trainset,
-        elastic_total_kbar_valset,
-        elastic_total_kbar_testset,
-    ) = get_tensor_dataloaders_split(
-        path=path_name_dict["elastic_total_kbar"],
-        property_name="elastic_total_kbar",
-        cutoff=cutoff,
-        train_val_test=train_val_test,
-        seed=seed,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    (
-        piezoelectric_C_m2_trainset,
-        piezoelectric_C_m2_valset,
-        piezoelectric_C_m2_testset,
-    ) = get_tensor_dataloaders_split(
-        path=path_name_dict["piezoelectric_C_m2"],
-        property_name="piezoelectric_C_m2",
-        cutoff=cutoff,
-        train_val_test=train_val_test,
-        seed=seed,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    (
-        piezoelectric_e_Angst_trainset,
-        piezoelectric_e_Angst_valset,
-        piezoelectric_e_Angst_testset,
-    ) = get_tensor_dataloaders_split(
-        path=path_name_dict["piezoelectric_e_Angst"],
-        property_name="piezoelectric_e_Angst",
-        cutoff=cutoff,
-        train_val_test=train_val_test,
-        seed=seed,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-
-    # models
-    # 1. shared embedding layer
-    # 2. shared invariant layers
-    # 3. shared middle_mlp, equivariant layers for self train
-    # 4. shared equivariant for scalar train
-    # 4. different middle_mlps, final mlps, readout layers for each property in scalar train and tensor train
-    embedding_layer = EmbeddingLayer(
-        dist_emb_func=dist_emb_func,
-        embed_dim=embed_dim,
-        max_atom_type=max_atom_type,
-        cutoff=cutoff,
-    )
-    invariant_layers = nn.ModuleList(
-        [
-            InvariantLayer(update_method=inv_update_method, scalar_dim=embed_dim)
-            for _ in range(num_inv_layers)
+    # Create scalar dataloaders
+    if need_scalar_train:
+        scalar_properties = [
+            "formation_energy",
+            "opt_bandgap",
+            "total_energy",
+            "ehull",
+            "mbj_bandgap",
+            "bandgap",
+            "e_form",
+            "bulk_modulus",
+            "shear_modulus",
         ]
+        scalar_dataloaders = _create_scalar_dataloaders(
+            path_name_dict,
+            scalar_properties,
+            cutoff,
+            train_val_test,
+            seed,
+            batch_size,
+            pin_memory,
+            num_workers,
+        )
+
+    # Create tensor dataloaders
+    if need_tensor_train:
+        tensor_properties = [
+            "dielectric",
+            "dielectric_ionic",
+            "elastic_sym_kbar",
+            "elastic_total_kbar",
+            "piezoelectric_C_m2",
+            "piezoelectric_e_Angst",
+        ]
+        tensor_dataloaders = _create_tensor_dataloaders(
+            path_name_dict,
+            tensor_properties,
+            cutoff,
+            train_val_test,
+            seed,
+            batch_size,
+            pin_memory,
+            num_workers,
+        )
+
+    # Create shared model components
+    (
+        embedding_layer,
+        invariant_layers,
+        equivariant_layers,
+        irreps_list,
+        final_irreps_hidden,
+        final_irreps_out,
+        l_max,
+    ) = _create_shared_components(
+        dist_emb_func,
+        embed_dim,
+        max_atom_type,
+        cutoff,
+        inv_update_method,
+        num_inv_layers,
+        num_equi_layers,
+        equi_update_method,
+        tp_method,
+        scalar_dim,
+        vec_dim,
+        num_final_hidden_layers,
+        final_scalar_hidden_dim,
+        final_vec_hidden_dim,
+        final_scalar_out_dim,
+        final_vec_out_dim,
     )
-    # middle_mlp = MiddleMLP(
-    #     scalar_dim_in=embed_dim,
-    #     scalar_dim_hidden=middle_scalar_hidden_dim,
-    #     num_hidden_layers=num_middle_hidden_layers,
-    # )
 
-    irreps_list = [f"{scalar_dim}x0e"]
-    l_max = num_equi_layers
-    for l in range(1, l_max + 1):
-        p = "e" if l % 2 == 0 else "o"
-        irreps_list.append(f"{scalar_dim}x0e+{vec_dim}x{l}{p}")
+    # Self train
+    if need_self_train:
+        self_middle_mlp = MiddleMLP(
+            scalar_dim_in=embed_dim,
+            scalar_dim_hidden=middle_scalar_hidden_dim,
+            scalar_dim_out=scalar_dim,
+            num_hidden_layers=num_middle_hidden_layers,
+        )
+        self_final_mlp = FinalMLP(
+            irreps_in=irreps_list[-1],
+            irreps_hidden=final_irreps_hidden,
+            irreps_out=final_irreps_out,
+            num_hidden_layers=num_final_hidden_layers,
+        )
+        self_readout_layer = ReadoutLayer(
+            l_max=1,
+            symmetry=None,
+        )
+        self_model = Model(
+            embedding_layer=embedding_layer,
+            invariant_layers=invariant_layers,
+            equivariant_layers=equivariant_layers,
+            middle_mlp=self_middle_mlp,
+            final_mlp=self_final_mlp,
+            readout_layer=self_readout_layer,
+            self_train=True,
+            final_pooling=final_pooling,
+            irreps_list=irreps_list,
+        )
 
-    equivariant_layers = nn.ModuleList(
-        [
-            EquivariantLayer(
-                update_method=equi_update_method,
-                irreps_in=irreps_list[i],
-                irreps_out=irreps_list[i+1],
-                tp_method=tp_method,
-                residual=True,
+        # Execute self training
+        self_train(
+            embedding_layer=embedding_layer,
+            invariant_layers=invariant_layers,
+            middle_mlp=self_middle_mlp,
+            equivariant_layers=equivariant_layers,
+            final_mlp=self_final_mlp,
+            readout_layer=self_readout_layer,
+            dataloader=self_trainset,
+            num_epochs=num_epochs,
+            checkpoint_dir=checkpoint_dir,
+            pic_dir=pic_dir,
+            start_epoch=start_epoch,
+            resume_from=None,
+            save_interval=save_interval,
+            clip_grad_norm=clip_grad_norm,
+            loss_func=self_loss_func,
+            learning_rate=lr,
+            weight_decay=weight_decay,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            limit=self_limit,
+        )
+
+    # Scalar train - create models for all scalar properties
+    if need_scalar_train:
+        scalar_models = _create_scalar_models(
+            scalar_properties,
+            embedding_layer,
+            invariant_layers,
+            equivariant_layers,
+            irreps_list,
+            final_irreps_hidden,
+            final_irreps_out,
+            final_pooling,
+            embed_dim,
+            scalar_dim,
+            middle_scalar_hidden_dim,
+            num_middle_hidden_layers,
+            num_final_hidden_layers,
+        )
+
+        # Execute scalar training for each property
+        for prop in scalar_properties:
+            scalar_train(
+                property_name=prop,
+                embedding_layer=embedding_layer,
+                invariant_layers=invariant_layers,
+                middle_mlp=scalar_models[f"{prop}_model"].middle_mlp,
+                equivariant_layers=equivariant_layers,
+                final_mlp=scalar_models[f"{prop}_model"].final_mlp,
+                readout_layer=scalar_models[f"{prop}_model"].readout_layer,
+                scalar_trainset=scalar_dataloaders[f"{prop}_trainset"],
+                scalar_valset=scalar_dataloaders[f"{prop}_valset"],
+                num_epochs=num_epochs,
+                checkpoint_dir=checkpoint_dir,
+                pic_dir=pic_dir,
+                start_epoch=start_epoch,
+                resume_from=None,
+                save_interval=save_interval,
+                clip_grad_norm=clip_grad_norm,
+                learning_rate=lr,
+                weight_decay=weight_decay,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                loss_func=scalar_loss_func,
+                limit=scalar_limit,
             )
-            for i in range(num_equi_layers)
-        ]
-    )
 
-    self_middle_mlp = MiddleMLP(
-        scalar_dim_in=embed_dim,
-        scalar_dim_hidden=middle_scalar_hidden_dim,
-        scalar_dim_out=scalar_dim,
-        num_hidden_layers=num_middle_hidden_layers,
-    )
-    self_final_mlp = FinalMLP(
-        irreps_in=irreps_list[-1],
-        irreps_out=
-        num_hidden_layers=num_final_hidden_layers,
-    )
+    # Tensor train - create models for all tensor properties
+    if need_tensor_train:
+        tensor_models = _create_tensor_models(
+            tensor_properties,
+            embedding_layer,
+            invariant_layers,
+            equivariant_layers,
+            irreps_list,
+            final_irreps_hidden,
+            final_irreps_out,
+            final_pooling,
+            scalar_dim,
+            vec_dim,
+            middle_scalar_hidden_dim,
+            num_middle_hidden_layers,
+            num_final_hidden_layers,
+        )
+
+        # Execute tensor training for each property
+        for prop in tensor_properties:
+            tensor_train(
+                property_name=prop,
+                embedding_layer=embedding_layer,
+                invariant_layers=invariant_layers,
+                middle_mlp=tensor_models[f"{prop}_model"].middle_mlp,
+                equivariant_layers=equivariant_layers,
+                final_mlp=tensor_models[f"{prop}_model"].final_mlp,
+                readout_layer=tensor_models[f"{prop}_model"].readout_layer,
+                tensor_trainset=tensor_dataloaders[f"{prop}_trainset"],
+                tensor_valset=tensor_dataloaders[f"{prop}_valset"],
+                num_epochs=num_epochs,
+                checkpoint_dir=checkpoint_dir,
+                pic_dir=pic_dir,
+                start_epoch=start_epoch,
+                resume_from=None,
+                save_interval=save_interval,
+                clip_grad_norm=clip_grad_norm,
+                learning_rate=lr,
+                weight_decay=weight_decay,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                loss_func=tensor_loss_func,
+                limit=tensor_limit,
+            )
