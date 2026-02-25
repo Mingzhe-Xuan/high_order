@@ -354,20 +354,24 @@ class EquivariantLayer(nn.Module):
         super().__init__()
         self.residual = residual
         self.update_method = update_method
-        if update_method == "equiformer":
-            self.layer = EquiformerLayer(
-                irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
-            )
-        elif update_method == "tpconv":
-            self.layer = TpconvLayer(
-                irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
-            )
-        elif update_method == "tpconv_with_edge":
-            self.layer = TpconvWithEdgeLayer(
-                irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
-            )
-        else:
-            raise NotImplementedError(f"Not implemented yet: {update_method}")
+        # if update_method == "equiformer":
+        #     self.layer = EquiformerLayer(
+        #         irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
+        #     )
+        # elif update_method == "tpconv":
+        #     self.layer = TpconvLayer(
+        #         irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
+        #     )
+        # elif update_method == "tpconv_with_edge":
+        #     self.layer = TpconvWithEdgeLayer(
+        #         irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
+        #     )
+        # else:
+        #     raise NotImplementedError(f"Not implemented yet: {update_method}")
+        assert update_method == "tpconv_with_edge", "Only tpconv_with_edge is supported for now"
+        self.layer = TpconvWithEdgeLayer(
+            irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
+        )
 
     def forward(
         self,

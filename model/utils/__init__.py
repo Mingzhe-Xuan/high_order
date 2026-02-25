@@ -1,1 +1,2 @@
 from .add_irreps_tensor import add_irreps_tensor
+from .ns_nv_lmax_to_irreps import get_irreps_from_ns_nv_lmax

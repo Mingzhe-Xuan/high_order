@@ -13,23 +13,24 @@ class ReadoutLayer(nn.Module):
         self.symmetry = symmetry
 
         # 根据l_max自动选择合适的CartesianTensor formula
-        if symmetry is None:
-            if l_max == 1:
-                formula = "i"  # 1阶张量（向量）
-            elif l_max == 2:
-                formula = "ij"  # 2阶张量（3x3矩阵）
-            elif l_max == 3:
-                formula = "ijk"  # 3阶张量
-            elif l_max == 4:
-                formula = "ijkl"  # 4阶张量
+        if l_max > 0:
+            if symmetry is None:
+                if l_max == 1:
+                    formula = "i"  # 1阶张量（向量）
+                elif l_max == 2:
+                    formula = "ij"  # 2阶张量（3x3矩阵）
+                elif l_max == 3:
+                    formula = "ijk"  # 3阶张量
+                elif l_max == 4:
+                    formula = "ijkl"  # 4阶张量
+                else:
+                    raise ValueError(
+                        f"Unsupported l_max: {l_max}. Supported values are 1, 2, 3, 4."
+                    )
             else:
-                raise ValueError(
-                    f"Unsupported l_max: {l_max}. Supported values are 1, 2, 3, 4."
-                )
-        else:
-            formula = symmetry
+                formula = symmetry
 
-        self.cartesian_tensor = CartesianTensor(formula)
+            self.cartesian_tensor = CartesianTensor(formula)
 
     def _l_3_tensor_to_voigt(self, d_ijk):
         """
@@ -100,79 +101,92 @@ class ReadoutLayer(nn.Module):
         self,
         global_feature: torch.Tensor,
         irreps_out: Union[str, Irreps],
-        property_name: Union[str, None] = None,
+        # property_name: Union[str, None] = None,
         linear_adaption: bool = False,
     ) -> torch.Tensor:
         if isinstance(irreps_out, str):
             irreps_out = Irreps(irreps_out)
 
-        if not linear_adaption:
-            # 获取CartesianTensor的l值列表
-            cart_ls = self.cartesian_tensor.ls
+        if self.l_max > 0:
+            if not linear_adaption:
+                # 获取CartesianTensor的l值列表
+                cart_ls = self.cartesian_tensor.ls
 
-            # 将irreps_out按照l值分组
-            l_to_features = {}
-            start_idx = 0
+                # 将irreps_out按照l值分组
+                l_to_features = {}
+                start_idx = 0
 
-            for mul, (l, p) in irreps_out:
-                dim = (2 * l + 1) * mul
+                for mul, (l, p) in irreps_out:
+                    dim = (2 * l + 1) * mul
 
-                if l in cart_ls:
-                    if start_idx + dim <= global_feature.shape[1]:
-                        feature_slice = global_feature[:, start_idx : start_idx + dim]
+                    if l in cart_ls:
+                        if start_idx + dim <= global_feature.shape[1]:
+                            feature_slice = global_feature[:, start_idx : start_idx + dim]
+                        else:
+                            feature_slice = global_feature[:, start_idx:]
+                            padding = torch.zeros(
+                                global_feature.shape[0],
+                                dim - feature_slice.shape[1],
+                                device=global_feature.device,
+                                dtype=global_feature.dtype,
+                            )
+                            feature_slice = torch.cat([feature_slice, padding], dim=1)
+
+                        if mul > 1:
+                            feature_slice = feature_slice.view(
+                                global_feature.shape[0], mul, 2 * l + 1
+                            )
+                            feature_slice = feature_slice.mean(dim=1)
+
+                        if l not in l_to_features:
+                            l_to_features[l] = []
+                        l_to_features[l].append(feature_slice)
+
+                    start_idx += dim
+
+                # 为CartesianTensor的每个l值收集特征
+                pooled_features = []
+                for l in cart_ls:
+                    if l in l_to_features and l_to_features[l]:
+                        l_features = torch.stack(l_to_features[l], dim=0).mean(dim=0)
+                        pooled_features.append(l_features)
                     else:
-                        feature_slice = global_feature[:, start_idx:]
-                        padding = torch.zeros(
-                            global_feature.shape[0],
-                            dim - feature_slice.shape[1],
-                            device=global_feature.device,
-                            dtype=global_feature.dtype,
+                        pooled_features.append(
+                            torch.zeros(
+                                global_feature.shape[0],
+                                2 * l + 1,
+                                device=global_feature.device,
+                                dtype=global_feature.dtype,
+                            )
                         )
-                        feature_slice = torch.cat([feature_slice, padding], dim=1)
 
-                    if mul > 1:
-                        feature_slice = feature_slice.view(
-                            global_feature.shape[0], mul, 2 * l + 1
-                        )
-                        feature_slice = feature_slice.mean(dim=1)
+                global_feature = torch.cat(pooled_features, dim=1)
+            else:
+                linear_out = Linear(irreps_out, self.cartesian_tensor)
+                global_feature = linear_out(global_feature)
 
-                    if l not in l_to_features:
-                        l_to_features[l] = []
-                    l_to_features[l].append(feature_slice)
-
-                start_idx += dim
-
-            # 为CartesianTensor的每个l值收集特征
-            pooled_features = []
-            for l in cart_ls:
-                if l in l_to_features and l_to_features[l]:
-                    l_features = torch.stack(l_to_features[l], dim=0).mean(dim=0)
-                    pooled_features.append(l_features)
-                else:
-                    pooled_features.append(
-                        torch.zeros(
-                            global_feature.shape[0],
-                            2 * l + 1,
-                            device=global_feature.device,
-                            dtype=global_feature.dtype,
-                        )
-                    )
-
-            global_feature = torch.cat(pooled_features, dim=1)
-        else:
-            linear_out = Linear(irreps_out, self.cartesian_tensor)
-            global_feature = linear_out(global_feature)
-
-        cart_property = self.cartesian_tensor.to_cartesian(global_feature)
-        if "dielectric" in property_name:
-            return cart_property
-        elif "piezoelectric" in property_name:
-            return torch.from_numpy(
-                self._l_3_tensor_to_voigt(cart_property.cpu().numpy())
-            )
-        elif "elastic" in property_name:
-            return torch.from_numpy(
-                self._l_4_tensor_to_voigt(cart_property.cpu().numpy())
-            )
-        else:
-            raise NotImplementedError("property_name not supported")
+            cart_property = self.cartesian_tensor.to_cartesian(global_feature)
+            # if "dielectric" in property_name:
+            #     return cart_property
+            # elif "piezoelectric" in property_name:
+            #     return torch.from_numpy(
+            #         self._l_3_tensor_to_voigt(cart_property.cpu().numpy())
+            #     )
+            # elif "elastic" in property_name:
+            #     return torch.from_numpy(
+            #         self._l_4_tensor_to_voigt(cart_property.cpu().numpy())
+            #     )
+            # else:
+            #     raise NotImplementedError("property_name not supported")
+            if self.l_max == 1 or self.l_max == 2:
+                return cart_property
+            elif self.l_max == 3:
+                return torch.from_numpy(
+                    self._l_3_tensor_to_voigt(cart_property.cpu().numpy())
+                )
+            elif self.l_max == 4:
+                return torch.from_numpy(
+                    self._l_4_tensor_to_voigt(cart_property.cpu().numpy())
+                )
+            else:
+                raise NotImplementedError("l_max not supported")
