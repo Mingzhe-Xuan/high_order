@@ -199,4 +199,4 @@ def self_train(
 
     print(f"Training completed. Best loss: {best_loss:.6f}")
     plot_loss(train_losses, pic_dir)
-    return model, train_losses
+    return model

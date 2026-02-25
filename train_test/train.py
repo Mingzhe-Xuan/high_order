@@ -4,17 +4,14 @@ import json
 import os
 from typing import Union
 from e3nn.o3 import Irreps
+from torch_geometric.loader import DataLoader
 
 from ..model.utils import get_irreps_from_ns_nv_lmax
 
-from ...data import (
-    get_mp_dataloader,
-    get_scalar_dataloaders_split,
-    get_tensor_dataloaders_split,
-)
 from .self_train import self_train
 from .scalar_train import scalar_train
 from .tensor_train import tensor_train
+from ...data import scalar_properties, tensor_properties, readout_configs
 from ..model import (
     EmbeddingLayer,
     InvariantLayer,
@@ -24,66 +21,6 @@ from ..model import (
     ReadoutLayer,
     Model,
 )
-
-
-def _create_scalar_dataloaders(
-    path_name_dict,
-    scalar_properties,
-    cutoff,
-    train_val_test,
-    seed,
-    batch_size,
-    pin_memory,
-    num_workers,
-):
-    """Create dataloaders for scalar properties."""
-    dataloaders = {}
-    for prop in scalar_properties:
-        trainset, valset, testset = get_scalar_dataloaders_split(
-            path=path_name_dict[prop],
-            property_name=prop,
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-        dataloaders[f"{prop}_trainset"] = trainset
-        dataloaders[f"{prop}_valset"] = valset
-        dataloaders[f"{prop}_testset"] = testset
-    return dataloaders
-
-
-def _create_tensor_dataloaders(
-    path_name_dict,
-    tensor_properties,
-    cutoff,
-    train_val_test,
-    seed,
-    batch_size,
-    pin_memory,
-    num_workers,
-):
-    """Create dataloaders for tensor properties."""
-    dataloaders = {}
-    for prop in tensor_properties:
-        trainset, valset, testset = get_tensor_dataloaders_split(
-            path=path_name_dict[prop],
-            property_name=prop,
-            cutoff=cutoff,
-            train_val_test=train_val_test,
-            seed=seed,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
-        dataloaders[f"{prop}_trainset"] = trainset
-        dataloaders[f"{prop}_valset"] = valset
-        dataloaders[f"{prop}_testset"] = testset
-    return dataloaders
 
 
 def _create_shared_components(
@@ -234,14 +171,14 @@ def _create_tensor_models(
     models = {}
 
     # Define readout layer configurations for different tensor properties
-    readout_configs = {
-        "dielectric": {"l_max": 2, "symmetry": "ij=ji"},
-        "dielectric_ionic": {"l_max": 2, "symmetry": "ij=ji"},
-        "elastic_sym_kbar": {"l_max": 4, "symmetry": "ijkl=jikl=ijlk=klij"},
-        "elastic_total_kbar": {"l_max": 4, "symmetry": "ijkl=jikl=ijlk=klij"},
-        "piezoelectric_C_m2": {"l_max": 2, "symmetry": "i,jk=kj"},
-        "piezoelectric_e_Angst": {"l_max": 2, "symmetry": "i,jk=kj"},
-    }
+    # readout_configs = {
+    #     "dielectric": {"l_max": 2, "symmetry": "ij=ji"},
+    #     "dielectric_ionic": {"l_max": 2, "symmetry": "ij=ji"},
+    #     "elastic_sym_kbar": {"l_max": 4, "symmetry": "ijkl=jikl=ijlk=klij"},
+    #     "elastic_total_kbar": {"l_max": 4, "symmetry": "ijkl=jikl=ijlk=klij"},
+    #     "piezoelectric_C_m2": {"l_max": 2, "symmetry": "i,jk=kj"},
+    #     "piezoelectric_e_Angst": {"l_max": 2, "symmetry": "i,jk=kj"},
+    # }
 
     for prop in tensor_properties:
         # Create model components for each property
@@ -282,8 +219,8 @@ def _create_tensor_models(
 
 
 def train(
-    # random seed
-    seed: int = 42,
+    # # random seed
+    # seed: int = 42,
     # model
     # embedding layer
     dist_emb_func: str = "gaussian",
@@ -314,11 +251,14 @@ def train(
     need_self_train: bool = True,
     need_scalar_train: bool = True,
     need_tensor_train: bool = True,
+    self_trainset: DataLoader = None,
+    scalar_dataloaders: dict[str, DataLoader] = None,
+    tensor_dataloaders: dict[str, DataLoader] = None,
     final_pooling: bool = False,
-    train_val_test: tuple[float, float, float] = (0.8, 0.1, 0.1),
-    batch_size: int = 32,
-    num_workers: int = 0,
-    pin_memory: bool = True,
+    # train_val_test: tuple[float, float, float] = (0.8, 0.1, 0.1),
+    # batch_size: int = 32,
+    # num_workers: int = 0,
+    # pin_memory: bool = True,
     num_epochs: int = 100,
     lr: float = 1e-3,
     weight_decay: float = 1e-5,
@@ -342,66 +282,77 @@ def train(
     3. use comformer as invariant layer, tpconv_with_edge by default
     4. different scalar properties: train on different scalar properties one batch each time with different models, and so on.
     """
-    # datasets
-    # 1. self trainset
-    # 2. scalar trainset, valset, testset
-    # 3. tensor trainset, valset, testset
-    with open("data/dataloaders/path_name.json") as f:
-        path_name_dict = json.load(f)
+    # scalar_properties = [
+    #     "formation_energy",
+    #     "opt_bandgap",
+    #     "total_energy",
+    #     "ehull",
+    #     "mbj_bandgap",
+    #     "bandgap",
+    #     "e_form",
+    #     "bulk_modulus",
+    #     "shear_modulus",
+    # ]
+    # tensor_properties = [
+    #     "dielectric",
+    #     "dielectric_ionic",
+    #     "elastic_sym_kbar",
+    #     "elastic_total_kbar",
+    #     "piezoelectric_C_m2",
+    #     "piezoelectric_e_Angst",
+    # ]
+    assert (
+        self_trainset is not None or not need_self_train
+    ), "self_trainset is required when need_self_train is True"
+    assert (
+        scalar_dataloaders is not None or not need_scalar_train
+    ), "scalar_dataloaders is required when need_scalar_train is True"
+    assert (
+        tensor_dataloaders is not None or not need_tensor_train
+    ), "tensor_dataloaders is required when need_tensor_train is True"
+    ################################ This part should be in main.py ##################################
+    # # datasets
+    # # 1. self trainset
+    # # 2. scalar trainset, valset, testset
+    # # 3. tensor trainset, valset, testset
+    # with open("data/dataloaders/name_path.json") as f:
+    #     name_path_dict = json.load(f)
 
-    if need_self_train:
-        self_trainset = get_mp_dataloader(
-            cutoff=cutoff,
-            batch_size=batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-        )
+    # if need_self_train:
+    #     self_trainset = get_mp_dataloader(
+    #         cutoff=cutoff,
+    #         batch_size=batch_size,
+    #         pin_memory=pin_memory,
+    #         num_workers=num_workers,
+    #         shuffle=True,
+    #     )
 
-    # Create scalar dataloaders
-    if need_scalar_train:
-        scalar_properties = [
-            "formation_energy",
-            "opt_bandgap",
-            "total_energy",
-            "ehull",
-            "mbj_bandgap",
-            "bandgap",
-            "e_form",
-            "bulk_modulus",
-            "shear_modulus",
-        ]
-        scalar_dataloaders = _create_scalar_dataloaders(
-            path_name_dict,
-            scalar_properties,
-            cutoff,
-            train_val_test,
-            seed,
-            batch_size,
-            pin_memory,
-            num_workers,
-        )
+    # # Create scalar dataloaders
+    # if need_scalar_train:
+    #     scalar_dataloaders = _create_scalar_dataloaders(
+    #         name_path_dict,
+    #         scalar_properties,
+    #         cutoff,
+    #         train_val_test,
+    #         seed,
+    #         batch_size,
+    #         pin_memory,
+    #         num_workers,
+    #     )
 
-    # Create tensor dataloaders
-    if need_tensor_train:
-        tensor_properties = [
-            "dielectric",
-            "dielectric_ionic",
-            "elastic_sym_kbar",
-            "elastic_total_kbar",
-            "piezoelectric_C_m2",
-            "piezoelectric_e_Angst",
-        ]
-        tensor_dataloaders = _create_tensor_dataloaders(
-            path_name_dict,
-            tensor_properties,
-            cutoff,
-            train_val_test,
-            seed,
-            batch_size,
-            pin_memory,
-            num_workers,
-        )
+    # # Create tensor dataloaders
+    # if need_tensor_train:
+    #     tensor_dataloaders = _create_tensor_dataloaders(
+    #         name_path_dict,
+    #         tensor_properties,
+    #         cutoff,
+    #         train_val_test,
+    #         seed,
+    #         batch_size,
+    #         pin_memory,
+    #         num_workers,
+    #     )
+    ##################################################################################################
 
     # Create shared model components
     (
@@ -462,7 +413,7 @@ def train(
         )
 
         # Execute self training
-        self_train(
+        self_trained_model = self_train(
             embedding_layer=embedding_layer,
             invariant_layers=invariant_layers,
             middle_mlp=self_middle_mlp,
@@ -485,6 +436,14 @@ def train(
             limit=self_limit,
         )
 
+        # save the shared layers
+        embedding_layer = self_trained_model.embedding_layer
+        invariant_layers = self_trained_model.invariant_layers
+        equivariant_layers = self_trained_model.equivariant_layers
+
+    ######## Here the training strategy is train the model property by property,  ########
+    ######## which can be improved to train one batch for each property one time. ########
+    ######## Or simply repeat the training process multiple times.                ########
     # Scalar train - create models for all scalar properties
     if need_scalar_train:
         scalar_models = _create_scalar_models(
@@ -505,7 +464,7 @@ def train(
 
         # Execute scalar training for each property
         for prop in scalar_properties:
-            scalar_train(
+            scalar_models[f"{prop}_model"] = scalar_train(
                 property_name=prop,
                 embedding_layer=embedding_layer,
                 invariant_layers=invariant_layers,
@@ -530,6 +489,11 @@ def train(
                 limit=scalar_limit,
             )
 
+            # save the shared layers
+            embedding_layer = scalar_models[f"{prop}_model"].embedding_layer
+            invariant_layers = scalar_models[f"{prop}_model"].invariant_layers
+            equivariant_layers = scalar_models[f"{prop}_model"].equivariant_layers
+
     # Tensor train - create models for all tensor properties
     if need_tensor_train:
         tensor_models = _create_tensor_models(
@@ -550,7 +514,7 @@ def train(
 
         # Execute tensor training for each property
         for prop in tensor_properties:
-            tensor_train(
+            tensor_models[f"{prop}_model"] = tensor_train(
                 property_name=prop,
                 embedding_layer=embedding_layer,
                 invariant_layers=invariant_layers,
@@ -574,3 +538,12 @@ def train(
                 loss_func=tensor_loss_func,
                 limit=tensor_limit,
             )
+
+            # save the shared layers
+            equi_shared = True
+            if equi_shared:
+                embedding_layer = tensor_models[f"{prop}_model"].embedding_layer
+                invariant_layers = tensor_models[f"{prop}_model"].invariant_layers
+                equivariant_layers = tensor_models[f"{prop}_model"].equivariant_layers
+
+    return scalar_models, tensor_models, embedding_layer, invariant_layers, equivariant_layers

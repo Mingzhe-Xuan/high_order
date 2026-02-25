@@ -241,12 +241,12 @@ def scalar_train(
     #     "shear_modulus",
     # ]
 
-    # with open("data/dataloaders/path_name.json") as f:
-    #     path_name_dict = json.load(f)
+    # with open("data/dataloaders/name_path.json") as f:
+    #     name_path_dict = json.load(f)
     # assert (
-    #     property_name in path_name_dict.keys()
+    #     property_name in name_path_dict.keys()
     # ), f"property_name {property_name} is not supported"
-    # path = path_name_dict[property_name][0]
+    # path = name_path_dict[property_name][0]
     # batches = get_scalar_dataloader(
     #     path,
     #     property_name,
@@ -388,4 +388,4 @@ def scalar_train(
     plot_mae(train_mae, pic_dir, property_name)
     plot_val_loss(train_losses, val_losses, pic_dir, property_name)
     plot_val_mae(train_mae, val_mae_scores, pic_dir, property_name)
-    return model, train_losses, train_mae, val_losses, val_mae_scores
+    return model

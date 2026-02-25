@@ -362,12 +362,12 @@ def tensor_train(
         train_batchwise_percent_error = checkpoint.get("train_batchwise_percent_error", [])
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
-    # with open("data/dataloaders/path_name.json") as f:
-    #     path_name_dict = json.load(f)
+    # with open("data/dataloaders/name_path.json") as f:
+    #     name_path_dict = json.load(f)
     # assert (
-    #     property_name in path_name_dict.keys()
+    #     property_name in name_path_dict.keys()
     # ), f"property_name {property_name} is not supported"
-    # path = path_name_dict[property_name][0]
+    # path = name_path_dict[property_name][0]
     # batches = get_tensor_dataloader(
     #     path,
     #     property_name,
