@@ -8,7 +8,7 @@ class MiddleMLP(nn.Module):
     def __init__(
         self,
         scalar_dim_in: int,
-        scalar_dim_hidden: str,
+        scalar_dim_hidden: int,
         scalar_dim_out: int,
         num_hidden_layers: int,
         act: nn.Module = nn.SiLU(),

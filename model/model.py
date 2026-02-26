@@ -176,7 +176,7 @@ class Model(nn.Module):
         if not final_pooling:
             assert irreps_list is not None, "irreps_list should be provided"
             self.irreps_list = [Irreps(ir) for ir in irreps_list]
-            assert irreps_list[0].lmax == 0, "lmax of first irreps should be 0"
+            assert self.irreps_list[0].lmax == 0, "lmax of first irreps should be 0"
 
         self.embedding_layer = embedding_layer
         self.invariant_layers = invariant_layers
@@ -222,7 +222,7 @@ class Model(nn.Module):
                 global_feature = add_irreps_tensor(self.irreps_list, atom_feature_list)
             # global_feature: (num_graphs, irreps_out.dim)
             global_feature = scatter(atom_feature, batch_index, dim=0, reduce="mean")
-            property_out = self.readout_layer(global_feature, edge_feature)
+            property_out = self.readout_layer(global_feature, self.final_mlp.irreps_out)
             return property_out
         else:
             return atom_feature
