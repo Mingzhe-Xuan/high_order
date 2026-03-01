@@ -177,6 +177,8 @@ class Model(nn.Module):
             assert irreps_list is not None, "irreps_list should be provided"
             self.irreps_list = [Irreps(ir) for ir in irreps_list]
             assert self.irreps_list[0].lmax == 0, "lmax of first irreps should be 0"
+        else:
+            self.irreps_list = []
 
         self.embedding_layer = embedding_layer
         self.invariant_layers = invariant_layers

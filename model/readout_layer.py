@@ -5,6 +5,8 @@ from e3nn.o3 import Irreps, Linear
 from typing import Union
 import numpy as np
 
+from .utils import full2voigt, voigt2full, _l_max
+
 
 class ReadoutLayer(nn.Module):
     def __init__(self, l_max: int, symmetry: str = None):
@@ -32,70 +34,70 @@ class ReadoutLayer(nn.Module):
 
             self.cartesian_tensor = CartesianTensor(formula)
 
-    def _l_3_tensor_to_voigt(self, d_ijk):
-        """
-        将 3x3x3 压电张量转换为 3x6 Voigt 记号形式
+    # def _l_3_tensor_to_voigt(self, d_ijk):
+    #     """
+    #     将 3x3x3 压电张量转换为 3x6 Voigt 记号形式
 
-        Args:
-            d_ijk: 形状为 (batch_size, 3, 3, 3) 的压电张量
+    #     Args:
+    #         d_ijk: 形状为 (batch_size, 3, 3, 3) 的压电张量
 
-        Returns:
-            d_voigt: 形状为 (batch_size, 3, 6) 的 Voigt 记号矩阵
-        """
-        batch_size = d_ijk.shape[0]
-        d_voigt = np.zeros((batch_size, 3, 6))
+    #     Returns:
+    #         d_voigt: 形状为 (batch_size, 3, 6) 的 Voigt 记号矩阵
+    #     """
+    #     batch_size = d_ijk.shape[0]
+    #     d_voigt = np.zeros((batch_size, 3, 6))
 
-        # Voigt 记号映射
-        voigt_map = {
-            0: (0, 0),  # 1 -> (0,0)
-            1: (1, 1),  # 2 -> (1,1)
-            2: (2, 2),  # 3 -> (2,2)
-            3: (1, 2),  # 4 -> (1,2)
-            4: (0, 2),  # 5 -> (0,2)
-            5: (0, 1),  # 6 -> (0,1)
-        }
+    #     # Voigt 记号映射
+    #     voigt_map = {
+    #         0: (0, 0),  # 1 -> (0,0)
+    #         1: (1, 1),  # 2 -> (1,1)
+    #         2: (2, 2),  # 3 -> (2,2)
+    #         3: (1, 2),  # 4 -> (1,2)
+    #         4: (0, 2),  # 5 -> (0,2)
+    #         5: (0, 1),  # 6 -> (0,1)
+    #     }
 
-        for b in range(batch_size):
-            for i in range(3):
-                for m, (j, k) in voigt_map.items():
-                    d_voigt[b, i, m] = d_ijk[b, i, j, k]
+    #     for b in range(batch_size):
+    #         for i in range(3):
+    #             for m, (j, k) in voigt_map.items():
+    #                 d_voigt[b, i, m] = d_ijk[b, i, j, k]
 
-        return d_voigt
+    #     return d_voigt
 
-    def _l_4_tensor_to_voigt(self, C_ijkl):
-        """
-        将 3x3x3x3 弹性张量转换为 6x6 Voigt 记号形式
+    # def _l_4_tensor_to_voigt(self, C_ijkl):
+    #     """
+    #     将 3x3x3x3 弹性张量转换为 6x6 Voigt 记号形式
 
-        Args:
-            C_ijkl: 形状为 (batch_size, 3, 3, 3, 3) 的弹性张量
+    #     Args:
+    #         C_ijkl: 形状为 (batch_size, 3, 3, 3, 3) 的弹性张量
 
-        Returns:
-            C_voigt: 形状为 (batch_size, 6, 6) 的 Voigt 记号矩阵
-        """
-        batch_size = C_ijkl.shape[0]
-        C_voigt = np.zeros((batch_size, 6, 6))
+    #     Returns:
+    #         C_voigt: 形状为 (batch_size, 6, 6) 的 Voigt 记号矩阵
+    #     """
+    #     batch_size = C_ijkl.shape[0]
+    #     C_voigt = np.zeros((batch_size, 6, 6))
 
-        # Voigt 记号映射
-        voigt_map = {
-            0: (0, 0),  # 1 -> (0,0)
-            1: (1, 1),  # 2 -> (1,1)
-            2: (2, 2),  # 3 -> (2,2)
-            3: (1, 2),  # 4 -> (1,2)
-            4: (0, 2),  # 5 -> (0,2)
-            5: (0, 1),  # 6 -> (0,1)
-        }
+    #     # Voigt 记号映射
+    #     voigt_map = {
+    #         0: (0, 0),  # 1 -> (0,0)
+    #         1: (1, 1),  # 2 -> (1,1)
+    #         2: (2, 2),  # 3 -> (2,2)
+    #         3: (1, 2),  # 4 -> (1,2)
+    #         4: (0, 2),  # 5 -> (0,2)
+    #         5: (0, 1),  # 6 -> (0,1)
+    #     }
 
-        # 因子：正应变为1，剪切应变为2
-        factor = np.array([1, 1, 1, 2, 2, 2])
+    #     # 因子：正应变为1，剪切应变为2
+    #     factor = np.array([1, 1, 1, 2, 2, 2])
 
-        for b in range(batch_size):
-            for m in range(6):
-                for n in range(6):
-                    i, j = voigt_map[m]
-                    k, l = voigt_map[n]
-                    C_voigt[b, m, n] = C_ijkl[b, i, j, k, l] * factor[m] * factor[n]
+    #     for b in range(batch_size):
+    #         for m in range(6):
+    #             for n in range(6):
+    #                 i, j = voigt_map[m]
+    #                 k, l = voigt_map[n]
+    #                 C_voigt[b, m, n] = C_ijkl[b, i, j, k, l] * factor[m] * factor[n]
 
-        return C_voigt
+    #     return C_voigt
 
     def forward(
         self,
@@ -107,7 +109,13 @@ class ReadoutLayer(nn.Module):
         if isinstance(irreps_out, str):
             irreps_out = Irreps(irreps_out)
 
-        if self.l_max > 0:
+        if self.l_max == 0:
+            return global_feature
+        elif self.l_max > _l_max:
+            raise ValueError(
+                f"Unsupported l_max: {self.l_max}. Max supported l_max is {_l_max}."
+            )
+        else:
             if not linear_adaption:
                 # 获取CartesianTensor的l值列表
                 cart_ls = self.cartesian_tensor.ls
@@ -121,7 +129,9 @@ class ReadoutLayer(nn.Module):
 
                     if l in cart_ls:
                         if start_idx + dim <= global_feature.shape[1]:
-                            feature_slice = global_feature[:, start_idx : start_idx + dim]
+                            feature_slice = global_feature[
+                                :, start_idx : start_idx + dim
+                            ]
                         else:
                             feature_slice = global_feature[:, start_idx:]
                             padding = torch.zeros(
@@ -178,15 +188,4 @@ class ReadoutLayer(nn.Module):
             #     )
             # else:
             #     raise NotImplementedError("property_name not supported")
-            if self.l_max == 1 or self.l_max == 2:
-                return cart_property
-            elif self.l_max == 3:
-                return torch.from_numpy(
-                    self._l_3_tensor_to_voigt(cart_property.cpu().numpy())
-                )
-            elif self.l_max == 4:
-                return torch.from_numpy(
-                    self._l_4_tensor_to_voigt(cart_property.cpu().numpy())
-                )
-            else:
-                raise NotImplementedError("l_max not supported")
+            return full2voigt(self.l_max, cart_property)
