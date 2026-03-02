@@ -174,33 +174,37 @@ def main(
     #     "piezoelectric_C_m2",
     #     "piezoelectric_e_Angst",
     # ]
-    self_trainset = get_mp_dataloader(
-        cutoff=cutoff,
-        batch_size=batch_size,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        shuffle=True,
-    )
-    scalar_dataloaders = _create_scalar_dataloaders(
-        name_path_dict,
-        scalar_properties,
-        cutoff,
-        train_val_test,
-        seed,
-        batch_size,
-        pin_memory,
-        num_workers,
-    )
-    tensor_dataloaders = _create_tensor_dataloaders(
-        name_path_dict,
-        tensor_properties,
-        cutoff,
-        train_val_test,
-        seed,
-        batch_size,
-        pin_memory,
-        num_workers,
-    )
+    print("Start loading data...")
+    if need_self_train:
+        self_trainset = get_mp_dataloader(
+            cutoff=cutoff,
+            batch_size=batch_size,
+            pin_memory=pin_memory,
+            num_workers=num_workers,
+            shuffle=True,
+        )
+    if need_scalar_train:
+        scalar_dataloaders = _create_scalar_dataloaders(
+            name_path_dict,
+            scalar_properties,
+            cutoff,
+            train_val_test,
+            seed,
+            batch_size,
+            pin_memory,
+            num_workers,
+        )
+    if need_tensor_train:
+        tensor_dataloaders = _create_tensor_dataloaders(
+            name_path_dict,
+            tensor_properties,
+            cutoff,
+            train_val_test,
+            seed,
+            batch_size,
+            pin_memory,
+            num_workers,
+        )
     # Train
     print("Start training...")
     (
