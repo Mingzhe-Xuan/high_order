@@ -44,7 +44,7 @@ class ReadoutLayer(nn.Module):
             self.cartesian_tensor = CartesianTensor(formula)
         else:
             # CartesianTensor cannot handle l=0 with an empty formula
-            self.cartesian_tensor = "0e"
+            self.cartesian_tensor = Irreps("0e")
 
     # def _l_3_tensor_to_voigt(self, d_ijk):
     #     """

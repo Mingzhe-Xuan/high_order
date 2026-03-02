@@ -6,13 +6,13 @@ from typing import Union
 from e3nn.o3 import Irreps
 from torch_geometric.loader import DataLoader
 
-from ..model.utils import get_irreps_from_ns_nv_lmax
+from src.model.utils import get_irreps_from_ns_nv_lmax
 
 from .self_train import self_train
 from .scalar_train import scalar_train
 from .tensor_train import tensor_train
-from ...data import scalar_properties, tensor_properties, readout_configs
-from ..model import (
+from data import scalar_properties, tensor_properties, readout_configs
+from src.model import (
     EmbeddingLayer,
     InvariantLayer,
     MiddleMLP,
@@ -125,7 +125,7 @@ def _create_scalar_models(
         )
 
         final_mlp = FinalMLP(
-            irreps_in=irreps_list[-1],
+            irreps_in=Irreps(irreps_list[-1]).dim,
             irreps_hidden=final_irreps_hidden,
             irreps_out=final_irreps_out,
             num_hidden_layers=num_final_hidden_layers,
@@ -184,14 +184,14 @@ def _create_tensor_models(
     for prop in tensor_properties:
         # Create model components for each property
         middle_mlp = MiddleMLP(
-            scalar_dim_in=irreps_list[-1],  # Different from scalar models
+            scalar_dim_in=Irreps(irreps_list[-1]).dim,  # Different from scalar models
             scalar_dim_hidden=middle_scalar_hidden_dim,
             scalar_dim_out=scalar_dim,
             num_hidden_layers=num_middle_hidden_layers,
         )
 
         final_mlp = FinalMLP(
-            irreps_in=irreps_list[-1],
+            irreps_in=Irreps(irreps_list[-1]).dim,
             irreps_hidden=final_irreps_hidden,
             irreps_out=final_irreps_out,
             num_hidden_layers=num_final_hidden_layers,
@@ -393,7 +393,7 @@ def train(
             num_hidden_layers=num_middle_hidden_layers,
         )
         self_final_mlp = FinalMLP(
-            irreps_in=irreps_list[-1],
+            irreps_in=Irreps(irreps_list[-1]).dim,
             irreps_hidden=final_irreps_hidden,
             irreps_out=final_irreps_out,
             num_hidden_layers=num_final_hidden_layers,

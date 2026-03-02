@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 import json
@@ -8,7 +12,7 @@ from torch_geometric.loader import DataLoader
 import argparse
 
 
-from ..data import (
+from data import (
     get_mp_dataloader,
     get_scalar_dataloaders_split,
     get_tensor_dataloaders_split,
@@ -17,7 +21,7 @@ from ..data import (
     name_path_dict,
     readout_configs,
 )
-from .train_test import (
+from src.train_test import (
     # self_train,
     # scalar_train,
     # tensor_train,
@@ -26,7 +30,7 @@ from .train_test import (
     train,
     test,
 )
-from .train_test.utils.save_metrics import save_results_to_markdown
+from src.train_test.utils.save_metrics import save_results_to_markdown
 
 def _create_scalar_dataloaders(
     name_path_dict,
@@ -281,112 +285,3 @@ def main(
     )
 
     print("Done.")
-
-if __name__ == "__main__":
-    # Use argparse here to parse all parameters of main from command lines.
-    parser = argparse.ArgumentParser(description='High-order Equivariant Network Training')
-    
-    # Data parameters
-    parser.add_argument('--cutoff', type=float, default=5.0, help='Cutoff distance for graph construction (default: 5.0)')
-    parser.add_argument('--batch-size', type=int, default=32, help='Batch size for dataloaders (default: 32)')
-    parser.add_argument('--pin-memory', action='store_true', default=True, help='Pin memory for dataloaders (default: True)')
-    parser.add_argument('--no-pin-memory', dest='pin_memory', action='store_false', help='Disable pin memory for dataloaders')
-    parser.add_argument('--num-workers', type=int, default=0, help='Number of workers for dataloaders (default: 0)')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed (default: 42)')
-    parser.add_argument('--train-val-test', type=float, nargs=3, default=[0.8, 0.1, 0.1], 
-                        help='Train/validation/test split ratios (default: 0.8 0.1 0.1)')
-    
-    # Model parameters - embedding layer
-    parser.add_argument('--dist-emb-func', type=str, default='gaussian', 
-                        choices=['gaussian', 'bessel', 'polynomial'], 
-                        help='Distance embedding function (default: gaussian)')
-    parser.add_argument('--embed-dim', type=int, default=64, help='Embedding dimension (default: 64)')
-    parser.add_argument('--max-atom-type', type=int, default=118, help='Maximum atom type (default: 118)')
-    
-    # Model parameters - invariant layers
-    parser.add_argument('--inv-update-method', type=str, default='comformer',
-                        choices=['comformer', 'mlp', 'attention'],
-                        help='Invariant update method (default: conformer)')
-    parser.add_argument('--num-inv-layers', type=int, default=3, help='Number of invariant layers (default: 3)')
-    
-    # Model parameters - middle MLP
-    parser.add_argument('--middle-scalar-hidden-dim', type=int, default=128, 
-                        help='Hidden dimension for middle scalar layers (default: 128)')
-    parser.add_argument('--num-middle-hidden-layers', type=int, default=1, 
-                        help='Number of middle hidden layers (default: 1)')
-    
-    # Model parameters - equivariant layers
-    parser.add_argument('--equi-update-method', type=str, default='tpconv_with_edge',
-                        choices=['tpconv_with_edge', 'linear', 'conv'],
-                        help='Equivariant update method (default: tpconv_with_edge)')
-    parser.add_argument('--num-equi-layers', type=int, default=3, help='Number of equivariant layers (default: 3)')
-    parser.add_argument('--tp-method', type=str, default='so2', choices=['so2', 'so3'],
-                        help='Tensor product method (default: so2)')
-    parser.add_argument('--scalar-dim', type=int, default=16, help='Scalar dimension (default: 16)')
-    parser.add_argument('--vec-dim', type=int, default=8, help='Vector dimension (default: 8)')
-    
-    # Model parameters - final MLP
-    parser.add_argument('--num-final-hidden-layers', type=int, default=1, 
-                        help='Number of final hidden layers (default: 1)')
-    parser.add_argument('--final-scalar-hidden-dim', type=int, default=64, 
-                        help='Final scalar hidden dimension (default: 64)')
-    parser.add_argument('--final-vec-hidden-dim', type=int, default=16, 
-                        help='Final vector hidden dimension (default: 16)')
-    parser.add_argument('--final-scalar-out-dim', type=int, default=16, 
-                        help='Final scalar output dimension (default: 16)')
-    parser.add_argument('--final-vec-out-dim', type=int, default=8, 
-                        help='Final vector output dimension (default: 8)')
-    
-    # Training parameters
-    parser.add_argument('--need-self-train', action='store_true', default=True, 
-                        help='Enable self training (default: True)')
-    parser.add_argument('--no-need-self-train', dest='need_self_train', action='store_false',
-                        help='Disable self training')
-    parser.add_argument('--need-scalar-train', action='store_true', default=True, 
-                        help='Enable scalar training (default: True)')
-    parser.add_argument('--no-need-scalar-train', dest='need_scalar_train', action='store_false',
-                        help='Disable scalar training')
-    parser.add_argument('--need-tensor-train', action='store_true', default=True, 
-                        help='Enable tensor training (default: True)')
-    parser.add_argument('--no-need-tensor-train', dest='need_tensor_train', action='store_false',
-                        help='Disable tensor training')
-    parser.add_argument('--final-pooling', action='store_true', default=False, 
-                        help='Enable final pooling (default: False)')
-    parser.add_argument('--num-epochs', type=int, default=100, help='Number of training epochs (default: 100)')
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate (default: 0.001)')
-    parser.add_argument('--weight-decay', type=float, default=1e-5, help='Weight decay (default: 1e-5)')
-    parser.add_argument('--clip-grad-norm', type=float, default=1.0, help='Gradient clipping norm (default: 1.0)')
-    parser.add_argument('--save-interval', type=int, default=5, help='Model save interval (default: 5)')
-    parser.add_argument('--optimizer', type=str, default='adamw', choices=['adam', 'adamw', 'sgd'],
-                        help='Optimizer type (default: adamw)')
-    parser.add_argument('--scheduler', type=str, default='cosine_annealing', 
-                        choices=['cosine_annealing', 'step', 'exponential'],
-                        help='Learning rate scheduler (default: cosine_annealing)')
-    parser.add_argument('--self-loss-func', type=str, default='huber', 
-                        choices=['mse', 'mae', 'huber'],
-                        help='Self loss function (default: huber)')
-    parser.add_argument('--scalar-loss-func', type=str, default='huber', 
-                        choices=['mse', 'mae', 'huber'],
-                        help='Scalar loss function (default: huber)')
-    parser.add_argument('--tensor-loss-func', type=str, default='huber', 
-                        choices=['mse', 'mae', 'huber'],
-                        help='Tensor loss function (default: huber)')
-    parser.add_argument('--self-train-limit', type=int, default=None, 
-                        help='Limit for self training samples (default: None)')
-    parser.add_argument('--scalar-train-limit', type=int, default=None, 
-                        help='Limit for scalar training samples (default: None)')
-    parser.add_argument('--tensor-train-limit', type=int, default=None, 
-                        help='Limit for tensor training samples (default: None)')
-    
-    # Directory parameters
-    parser.add_argument('--checkpoint-dir', type=str, default='checkpoints', 
-                        help='Checkpoint directory (default: checkpoints)')
-    parser.add_argument('--pic-dir', type=str, default='pics', 
-                        help='Picture output directory (default: pics)')
-    parser.add_argument('--metric-dir', type=str, default='metrics', 
-                        help='Metrics output directory (default: metrics)')
-    parser.add_argument('--start-epoch', type=int, default=0, 
-                        help='Starting epoch for training (default: 0)')
-    
-    args = parser.parse_args()
-    main(**vars(args))

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from torch_geometric.loader import DataLoader
 
-from ...data import scalar_properties
+from data import scalar_properties
 
 def plot_test_results(y_true, y_pred, save_path: str, property_name: str):
     """

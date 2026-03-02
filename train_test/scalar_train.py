@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from model import Model
+from src.model import Model
 from data import get_scalar_dataloader
 
 
