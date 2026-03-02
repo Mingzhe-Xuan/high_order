@@ -221,10 +221,14 @@ class Model(nn.Module):
 
         if not self.self_train:
             if not self.final_pooling:
-                global_feature = add_irreps_tensor(self.irreps_list, atom_feature_list)
+                global_feature = add_irreps_tensor(
+                    self.irreps_list, atom_feature_list
+                ) / len(atom_feature_list)
             # global_feature: (num_graphs, irreps_out.dim)
             global_feature = scatter(atom_feature, batch_index, dim=0, reduce="mean")
             property_out = self.readout_layer(global_feature, self.final_mlp.irreps_out)
             return property_out
         else:
-            return atom_feature
+            # force_out: (num_nodes, 3)
+            force_out = self.readout_layer(atom_feature, self.final_mlp.irreps_out)
+            return force_out

@@ -1,3 +1,4 @@
+from math import e
 import torch
 import torch.nn as nn
 from e3nn.io import CartesianTensor
@@ -7,6 +8,14 @@ import numpy as np
 
 from .utils import full2voigt, voigt2full, _l_max
 
+class GMTReadoutLayer(nn.Module):
+    def __init__(self, l_max: int, symmetry: str = None):
+        super().__init__()
+        self.l_max = l_max
+        self.symmetry = symmetry
+    
+    def forward(self, atom_feature: torch.Tensor) -> torch.Tensor:
+        pass
 
 class ReadoutLayer(nn.Module):
     def __init__(self, l_max: int, symmetry: str = None):
@@ -33,6 +42,9 @@ class ReadoutLayer(nn.Module):
                 formula = symmetry
 
             self.cartesian_tensor = CartesianTensor(formula)
+        else:
+            # CartesianTensor cannot handle l=0 with an empty formula
+            self.cartesian_tensor = "0e"
 
     # def _l_3_tensor_to_voigt(self, d_ijk):
     #     """
@@ -104,74 +116,73 @@ class ReadoutLayer(nn.Module):
         global_feature: torch.Tensor,
         irreps_out: Union[str, Irreps],
         # property_name: Union[str, None] = None,
-        linear_adaption: bool = False,
+        # linear_adaption: bool = False, -- Deprecated --
     ) -> torch.Tensor:
         if isinstance(irreps_out, str):
             irreps_out = Irreps(irreps_out)
 
-        if self.l_max == 0:
-            return global_feature
-        elif self.l_max > _l_max:
+        if self.l_max > _l_max:
             raise ValueError(
                 f"Unsupported l_max: {self.l_max}. Max supported l_max is {_l_max}."
             )
         else:
-            if not linear_adaption:
-                # 获取CartesianTensor的l值列表
-                cart_ls = self.cartesian_tensor.ls
+            # if not linear_adaption:
+            #     # 获取CartesianTensor的l值列表
+            #     cart_ls = self.cartesian_tensor.ls
 
-                # 将irreps_out按照l值分组
-                l_to_features = {}
-                start_idx = 0
+            #     # 将irreps_out按照l值分组
+            #     l_to_features = {}
+            #     start_idx = 0
 
-                for mul, (l, p) in irreps_out:
-                    dim = (2 * l + 1) * mul
+            #     for mul, (l, p) in irreps_out:
+            #         dim = (2 * l + 1) * mul
 
-                    if l in cart_ls:
-                        if start_idx + dim <= global_feature.shape[1]:
-                            feature_slice = global_feature[
-                                :, start_idx : start_idx + dim
-                            ]
-                        else:
-                            feature_slice = global_feature[:, start_idx:]
-                            padding = torch.zeros(
-                                global_feature.shape[0],
-                                dim - feature_slice.shape[1],
-                                device=global_feature.device,
-                                dtype=global_feature.dtype,
-                            )
-                            feature_slice = torch.cat([feature_slice, padding], dim=1)
+            #         if l in cart_ls:
+            #             if start_idx + dim <= global_feature.shape[1]:
+            #                 feature_slice = global_feature[
+            #                     :, start_idx : start_idx + dim
+            #                 ]
+            #             else:
+            #                 feature_slice = global_feature[:, start_idx:]
+            #                 padding = torch.zeros(
+            #                     global_feature.shape[0],
+            #                     dim - feature_slice.shape[1],
+            #                     device=global_feature.device,
+            #                     dtype=global_feature.dtype,
+            #                 )
+            #                 feature_slice = torch.cat([feature_slice, padding], dim=1)
 
-                        if mul > 1:
-                            feature_slice = feature_slice.view(
-                                global_feature.shape[0], mul, 2 * l + 1
-                            )
-                            feature_slice = feature_slice.mean(dim=1)
+            #             if mul > 1:
+            #                 feature_slice = feature_slice.view(
+            #                     global_feature.shape[0], mul, 2 * l + 1
+            #                 )
+            #                 feature_slice = feature_slice.mean(dim=1)
 
-                        if l not in l_to_features:
-                            l_to_features[l] = []
-                        l_to_features[l].append(feature_slice)
+            #             if l not in l_to_features:
+            #                 l_to_features[l] = []
+            #             l_to_features[l].append(feature_slice)
 
-                    start_idx += dim
+            #         start_idx += dim
 
-                # 为CartesianTensor的每个l值收集特征
-                pooled_features = []
-                for l in cart_ls:
-                    if l in l_to_features and l_to_features[l]:
-                        l_features = torch.stack(l_to_features[l], dim=0).mean(dim=0)
-                        pooled_features.append(l_features)
-                    else:
-                        pooled_features.append(
-                            torch.zeros(
-                                global_feature.shape[0],
-                                2 * l + 1,
-                                device=global_feature.device,
-                                dtype=global_feature.dtype,
-                            )
-                        )
+            #     # 为CartesianTensor的每个l值收集特征
+            #     pooled_features = []
+            #     for l in cart_ls:
+            #         if l in l_to_features and l_to_features[l]:
+            #             l_features = torch.stack(l_to_features[l], dim=0).mean(dim=0)
+            #             pooled_features.append(l_features)
+            #         else:
+            #             pooled_features.append(
+            #                 torch.zeros(
+            #                     global_feature.shape[0],
+            #                     2 * l + 1,
+            #                     device=global_feature.device,
+            #                     dtype=global_feature.dtype,
+            #                 )
+            #             )
 
-                global_feature = torch.cat(pooled_features, dim=1)
-            else:
+            #     global_feature = torch.cat(pooled_features, dim=1)
+            # else:
+            if True:
                 linear_out = Linear(irreps_out, self.cartesian_tensor)
                 global_feature = linear_out(global_feature)
 

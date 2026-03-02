@@ -19,6 +19,9 @@ def get_union_irreps(irreps_list: Union[list[Irreps], list[str]]) -> Irreps:
 def add_irreps_tensor(
     irreps_list: Union[list[Irreps], list[str]], tensor_list: list[torch.Tensor]
 ) -> torch.Tensor:
+    assert len(irreps_list) == len(
+        tensor_list
+    ), "Length of irreps_list and tensor_list should be the same."
     # get the union irreps that contains all the ls in irreps_list and has the highest mul for each l
     union_irreps = get_union_irreps(irreps_list)
     # get index for each l in union_irreps
@@ -28,11 +31,15 @@ def add_irreps_tensor(
     union_slice_list = union_irreps.slices()
     batch_size = tensor_list[0].shape[0]
     for tensor in tensor_list:
-        assert tensor.shape[0] == batch_size, "Batch size of tensors in tensor_list should be the same."
+        assert (
+            tensor.shape[0] == batch_size
+        ), "Batch size of tensors in tensor_list should be the same."
 
     # add tensors
     tensor_out = torch.zeros(
-        (batch_size, union_irreps.dim), dtype=tensor_list[0].dtype, device=tensor_list[0].device
+        (batch_size, union_irreps.dim),
+        dtype=tensor_list[0].dtype,
+        device=tensor_list[0].device,
     )
     for irreps, tensor in zip(irreps_list, tensor_list):
         if isinstance(irreps, str):
@@ -43,7 +50,9 @@ def add_irreps_tensor(
         slice_list = irreps.slices()
         sliced_tensor = [tensor[:, s.start : s.stop] for s in slice_list]
         padding = torch.zeros(
-            (batch_size, union_irreps.dim), dtype=tensor_list[0].dtype, device=tensor_list[0].device
+            (batch_size, union_irreps.dim),
+            dtype=tensor_list[0].dtype,
+            device=tensor_list[0].device,
         )
         for i, mul_ir in enumerate(irreps):
             l = mul_ir[1][0]  # (mul, (l, p))

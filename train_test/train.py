@@ -145,6 +145,7 @@ def _create_scalar_models(
             readout_layer=readout_layer,
             self_train=False,
             final_pooling=final_pooling,
+            irreps_list=irreps_list,
         )
 
         models[f"{prop}_model"] = model
@@ -211,6 +212,7 @@ def _create_tensor_models(
             readout_layer=readout_layer,
             self_train=False,
             final_pooling=final_pooling,
+            irreps_list=irreps_list,
         )
 
         models[f"{prop}_model"] = model

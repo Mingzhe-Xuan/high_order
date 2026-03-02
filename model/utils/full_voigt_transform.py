@@ -156,7 +156,7 @@ def full2voigt(l_max: int, full_tensor: torch.Tensor) -> torch.Tensor:
     shear_factor = torch.tensor([1.0, 1.0, 1.0, 2.0, 2.0, 2.0], dtype=full_tensor.dtype, device=full_tensor.device)
     
     if l_max == 0:
-        return full_tensor.view(batch_size, 1)
+        return full_tensor.view(batch_size,)
     elif l_max == 1:
         return full_tensor.view(batch_size, 3)
     elif l_max == 2:
