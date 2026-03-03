@@ -273,7 +273,10 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, residual)
         
         self.tp_method = tp_method
-        self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
+        if irreps_in.lmax == 0:
+            self.tp = get_tp(tp_method, self.irreps_in, self.irreps_vec, self.irreps_out)
+        else:
+            self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
 
     def tpconv_with_edge_update(
         self,
@@ -291,7 +294,11 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         # dst_feature: (num_edges, irreps_in.dim)
         dst_feature = atom_feature[dst]
         # message: (num_edges, irreps_out.dim)
-        message = self.tp(src_feature, edge_feature)
+        if self.irreps_in.lmax == 0:
+            edge_sh = self.compute_spherical_harmonics(edge_vector)
+            message = self.tp(src_feature, edge_sh)
+        else:
+            message = self.tp(src_feature, edge_feature)
         # atom_feature: (num_nodes, irreps_out.dim)
         num_nodes = atom_feature.size(0)
         aggregated_message = self.aggregate_messages(

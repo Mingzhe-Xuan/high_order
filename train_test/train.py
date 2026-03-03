@@ -65,6 +65,12 @@ def _create_shared_components(
         p = "e" if l % 2 == 0 else "o"
         irreps_list.append(f"{scalar_dim}x0e+{vec_dim}x{l}{p}")
 
+    # create irreps_vec
+    irreps_vec = "0e"
+    for l in range(1, l_max + 1):
+        p = "e" if l % 2 == 0 else "o"
+        irreps_vec += f"+{l}{p}"
+
     # Shared equivariant layers
     equivariant_layers = nn.ModuleList(
         [
@@ -72,6 +78,7 @@ def _create_shared_components(
                 update_method=equi_update_method,
                 irreps_in=irreps_list[i],
                 irreps_out=irreps_list[i + 1],
+                irreps_vec=irreps_vec,
                 tp_method=tp_method,
                 residual=True,
             )
