@@ -277,6 +277,7 @@ def train(
     checkpoint_dir: str = "checkpoints",
     pic_dir: str = "pics",
     start_epoch: int = 0,
+    use_amp: bool = False,
 ):
     """
     1. self train: emb, inv, eqv, deco, readout - scalar train: emb, inv, deco - tensor train: emb, inv, eqv, deco, readout
@@ -436,6 +437,7 @@ def train(
             optimizer=optimizer,
             scheduler=scheduler,
             limit=self_limit,
+            use_amp=use_amp,
         )
 
         # save the shared layers
@@ -489,6 +491,7 @@ def train(
                 scheduler=scheduler,
                 loss_func=scalar_loss_func,
                 limit=scalar_limit,
+                use_amp=use_amp,
             )
 
             # save the shared layers
@@ -539,6 +542,7 @@ def train(
                 scheduler=scheduler,
                 loss_func=tensor_loss_func,
                 limit=tensor_limit,
+                use_amp=use_amp,
             )
 
             # save the shared layers

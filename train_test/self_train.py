@@ -60,6 +60,7 @@ def self_train(
     optimizer: str = "adamw",
     scheduler: str = "cosine_annealing",
     limit: int = None,
+    use_amp: bool = False,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = Model(
@@ -78,6 +79,9 @@ def self_train(
     best_loss = float("inf")
     train_losses = []
 
+    # AMP GradScaler
+    scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
+
     if resume_from and os.path.exists(resume_from):
         checkpoint = torch.load(resume_from, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -86,6 +90,8 @@ def self_train(
         start_epoch = checkpoint["epoch"] + 1
         best_loss = checkpoint["best_loss"]
         train_losses = checkpoint["train_losses"]
+        if use_amp and device.type == "cuda" and scaler is not None and "scaler_state_dict" in checkpoint:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
     # batches = get_mp_dataloader(
@@ -128,6 +134,8 @@ def self_train(
 
     os.makedirs(checkpoint_path / "self_train", exist_ok=True)
 
+    if limit is None:
+        limit = num_epochs
     model.train()
     for epoch in range(start_epoch, min(num_epochs, start_epoch + limit)):
         epoch_loss = 0.0
@@ -143,13 +151,24 @@ def self_train(
             force = batch.force.to(device)
 
             optimizer.zero_grad()
-            pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
-            loss = loss_fn(pred_force, force)
-            loss.backward()
+            
+            if use_amp and device.type == "cuda":
+                with torch.cuda.amp.autocast():
+                    pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
+                    loss = loss_fn(pred_force, force)
+                
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
+                loss = loss_fn(pred_force, force)
+                loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-
-            optimizer.step()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                optimizer.step()
 
             epoch_loss += loss.item()
             num_batches += 1
@@ -165,36 +184,36 @@ def self_train(
         if avg_loss < best_loss:
             best_loss = avg_loss
             best_checkpoint_path = checkpoint_path / "self_train" / "best_model.pth"
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "loss": avg_loss,
-                    "best_loss": best_loss,
-                    "train_losses": train_losses,
-                },
-                best_checkpoint_path,
-            )
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "loss": avg_loss,
+                "best_loss": best_loss,
+                "train_losses": train_losses,
+            }
+            if use_amp and device.type == "cuda" and scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, best_checkpoint_path)
             print(f"Saved best model with loss: {best_loss:.6f}")
 
         if (epoch + 1) % save_interval == 0:
             checkpoint_file = (
                 checkpoint_path / "self_train" / f"checkpoint_epoch_{epoch+1}.pth"
             )
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "loss": avg_loss,
-                    "best_loss": best_loss,
-                    "train_losses": train_losses,
-                },
-                checkpoint_file,
-            )
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "loss": avg_loss,
+                "best_loss": best_loss,
+                "train_losses": train_losses,
+            }
+            if use_amp and device.type == "cuda" and scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, checkpoint_file)
             print(f"Saved checkpoint at epoch {epoch+1}")
 
     print(f"Training completed. Best loss: {best_loss:.6f}")

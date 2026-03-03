@@ -291,6 +291,7 @@ def tensor_train(
     scheduler: str = "cosine_annealing",
     loss_func: str = "huber",
     limit: int = None,
+    use_amp: bool = False,
 ):
     """
     Train a tensor property prediction model with validation.
@@ -342,10 +343,9 @@ def tensor_train(
     best_loss = float("inf")
     train_losses = []
     train_mae = []
-    train_pointwise_mae = []
-    train_mse = []
-    train_mean_fnorm_percent_error = []
-    train_batchwise_percent_error = []
+
+    # AMP GradScaler
+    scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
     if resume_from and os.path.exists(resume_from):
         checkpoint = torch.load(resume_from, map_location=device)
@@ -360,6 +360,8 @@ def tensor_train(
         train_mse = checkpoint.get("train_mse", [])
         train_mean_fnorm_percent_error = checkpoint.get("train_mean_fnorm_percent_error", [])
         train_batchwise_percent_error = checkpoint.get("train_batchwise_percent_error", [])
+        if use_amp and device.type == "cuda" and scaler is not None and "scaler_state_dict" in checkpoint:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
     # with open("data/dataloaders/name_path.json") as f:
@@ -417,6 +419,8 @@ def tensor_train(
 
     os.makedirs(checkpoint_path / property_name, exist_ok=True)
 
+    if limit is None:
+        limit = num_epochs
     model.train()
     for epoch in range(start_epoch, min(num_epochs, start_epoch + limit)):
         # Training phase
@@ -433,8 +437,28 @@ def tensor_train(
             tensor_property = batch.tensor_property.to(device)
 
             optimizer.zero_grad()
-            pred_tensor_property = model(atom_type, edge_vec, edge_index, batch_index)
-            loss = loss_func(pred_tensor_property, tensor_property)
+            
+            if use_amp and device.type == "cuda":
+                with torch.cuda.amp.autocast():
+                    pred_tensor_property = model(atom_type, edge_vec, edge_index, batch_index)
+                    loss = loss_func(pred_tensor_property, tensor_property)
+                
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                pred_tensor_property = model(atom_type, edge_vec, edge_index, batch_index)
+                loss = loss_func(pred_tensor_property, tensor_property)
+
+                loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+
+                optimizer.step()
+            
+            # Calculate metrics
             pointwise_mae = (
                 (pred_tensor_property - tensor_property).view(-1).abs().mean()
             )
@@ -456,12 +480,6 @@ def tensor_train(
             batchwise_sum_fnorm = tensor_property.view(-1).pow(2).sum().sqrt()
             # Batchwise percent error: percent error in GMTNet
             batchwise_percent_error = batchwise_rsse / batchwise_sum_fnorm
-
-            loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-
-            optimizer.step()
 
             epoch_loss += loss.item()
             # Accumulate MAE for the epoch
@@ -513,68 +531,68 @@ def tensor_train(
         if val_loss < best_loss:
             best_loss = val_loss
             best_checkpoint_path = checkpoint_path / property_name / "best_model.pth"
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "train_loss": avg_loss,
-                    "val_loss": val_loss,
-                    "val_mae": val_avg_mae,
-                    "val_pointwise_mae": val_p_mae,
-                    "val_mse": val_mse,
-                    "val_mean_fnorm_percent_error": val_fnorm_err,
-                    "val_batchwise_percent_error": val_batch_err,
-                    "best_loss": best_loss,
-                    "train_pointwise_mae": train_pointwise_mae,
-                    "train_mse": train_mse,
-                    "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
-                    "train_batchwise_percent_error": train_batchwise_percent_error,
-                    "val_losses": val_losses,
-                    "val_mae_scores": val_mae_scores,
-                    "val_pointwise_mae": val_pointwise_mae,
-                    "val_mse_scores": val_mse_scores,
-                    "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
-                    "val_batchwise_percent_error": val_batchwise_percent_error,
-                },
-                best_checkpoint_path,
-            )
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "train_loss": avg_loss,
+                "val_loss": val_loss,
+                "val_mae": val_avg_mae,
+                "val_pointwise_mae": val_p_mae,
+                "val_mse": val_mse,
+                "val_mean_fnorm_percent_error": val_fnorm_err,
+                "val_batchwise_percent_error": val_batch_err,
+                "best_loss": best_loss,
+                "train_pointwise_mae": train_pointwise_mae,
+                "train_mse": train_mse,
+                "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
+                "train_batchwise_percent_error": train_batchwise_percent_error,
+                "val_losses": val_losses,
+                "val_mae_scores": val_mae_scores,
+                "val_pointwise_mae": val_pointwise_mae,
+                "val_mse_scores": val_mse_scores,
+                "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
+                "val_batchwise_percent_error": val_batchwise_percent_error,
+            }
+            if use_amp and device.type == "cuda" and scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, best_checkpoint_path)
             print(f"Saved best model with val loss: {best_loss:.6f}, val MAE: {val_avg_mae:.6f}")
 
         if (epoch + 1) % save_interval == 0:
             checkpoint_file = (
                 checkpoint_path / property_name / f"checkpoint_epoch_{epoch+1}.pth"
             )
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "train_loss": avg_loss,
-                    "val_loss": val_loss,
-                    "val_mae": val_avg_mae,
-                    "val_pointwise_mae": val_p_mae,
-                    "val_mse": val_mse,
-                    "val_mean_fnorm_percent_error": val_fnorm_err,
-                    "val_batchwise_percent_error": val_batch_err,
-                    "best_loss": best_loss,
-                    "train_losses": train_losses,
-                    "train_mae": train_mae,
-                    "train_pointwise_mae": train_pointwise_mae,
-                    "train_mse": train_mse,
-                    "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
-                    "train_batchwise_percent_error": train_batchwise_percent_error,
-                    "val_losses": val_losses,
-                    "val_mae_scores": val_mae_scores,
-                    "val_pointwise_mae": val_pointwise_mae,
-                    "val_mse_scores": val_mse_scores,
-                    "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
-                    "val_batchwise_percent_error": val_batchwise_percent_error,
-                },
-                checkpoint_file,
-            )
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "train_loss": avg_loss,
+                "val_loss": val_loss,
+                "val_mae": val_avg_mae,
+                "val_pointwise_mae": val_p_mae,
+                "val_mse": val_mse,
+                "val_mean_fnorm_percent_error": val_fnorm_err,
+                "val_batchwise_percent_error": val_batch_err,
+                "best_loss": best_loss,
+                "train_losses": train_losses,
+                "train_mae": train_mae,
+                "train_pointwise_mae": train_pointwise_mae,
+                "train_mse": train_mse,
+                "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
+                "train_batchwise_percent_error": train_batchwise_percent_error,
+                "val_losses": val_losses,
+                "val_mae_scores": val_mae_scores,
+                "val_pointwise_mae": val_pointwise_mae,
+                "val_mse_scores": val_mse_scores,
+                "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
+                "val_batchwise_percent_error": val_batchwise_percent_error,
+            }
+            if use_amp and device.type == "cuda" and scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, checkpoint_file)
             print(f"Saved checkpoint at epoch {epoch+1}")
 
     print(

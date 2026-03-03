@@ -169,6 +169,7 @@ def scalar_train(
     scheduler: str = "cosine_annealing",
     loss_func: str = "huber",
     limit: int = None,
+    use_amp: bool = False,
 ):
     """
     Train a scalar property prediction model with validation.
@@ -218,6 +219,9 @@ def scalar_train(
     train_losses = []
     train_mae = []
 
+    # AMP GradScaler
+    scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
+
     if resume_from and os.path.exists(resume_from):
         checkpoint = torch.load(resume_from, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -227,6 +231,8 @@ def scalar_train(
         best_loss = checkpoint["best_loss"]
         train_losses = checkpoint["train_losses"]
         train_mae = checkpoint["train_mae"]
+        if use_amp and device.type == "cuda" and scaler is not None and "scaler_state_dict" in checkpoint:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
     # supported_scalar_properties = [
@@ -292,6 +298,8 @@ def scalar_train(
     val_losses = []
     val_mae_scores = []
 
+    if limit is None:
+        limit = num_epochs
     model.train()
     for epoch in range(start_epoch, min(num_epochs, start_epoch + limit)):
         # Training phase
@@ -308,14 +316,26 @@ def scalar_train(
             scalar_property = batch.scalar_property.to(device)
 
             optimizer.zero_grad()
-            pred_scalar_property = model(atom_type, edge_vec, edge_index, batch_index)
+            
+            if use_amp and device.type == "cuda":
+                with torch.cuda.amp.autocast():
+                    pred_scalar_property = model(atom_type, edge_vec, edge_index, batch_index)
+                    loss = loss_fn(pred_scalar_property, scalar_property)
+                
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                pred_scalar_property = model(atom_type, edge_vec, edge_index, batch_index)
+                loss = loss_fn(pred_scalar_property, scalar_property)
+                loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
+                optimizer.step()
+            
             mae = (pred_scalar_property - scalar_property).abs().mean()
-            loss = loss_fn(pred_scalar_property, scalar_property)
-            loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-
-            optimizer.step()
 
             epoch_loss += loss.item()
             epoch_mae += mae.item()
@@ -341,46 +361,46 @@ def scalar_train(
         if val_loss < best_loss:
             best_loss = val_loss
             best_checkpoint_path = checkpoint_path / property_name / "best_model.pth"
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "train_loss": avg_loss,
-                    "val_loss": val_loss,
-                    "val_mae": val_mae,
-                    "best_loss": best_loss,
-                    "train_losses": train_losses,
-                    "train_mae": train_mae,
-                    "val_losses": val_losses,
-                    "val_mae_scores": val_mae_scores,
-                },
-                best_checkpoint_path,
-            )
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "train_loss": avg_loss,
+                "val_loss": val_loss,
+                "val_mae": val_mae,
+                "best_loss": best_loss,
+                "train_losses": train_losses,
+                "train_mae": train_mae,
+                "val_losses": val_losses,
+                "val_mae_scores": val_mae_scores,
+            }
+            if use_amp and device.type == "cuda" and scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, best_checkpoint_path)
             print(f"Saved best model with val loss: {best_loss:.6f}, val MAE: {val_mae:.6f}")
 
         if (epoch + 1) % save_interval == 0:
             checkpoint_file = (
                 checkpoint_path / property_name / f"checkpoint_epoch_{epoch+1}.pth"
             )
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": scheduler.state_dict(),
-                    "train_loss": avg_loss,
-                    "val_loss": val_loss,
-                    "val_mae": val_mae,
-                    "best_loss": best_loss,
-                    "train_losses": train_losses,
-                    "train_mae": train_mae,
-                    "val_losses": val_losses,
-                    "val_mae_scores": val_mae_scores,
-                },
-                checkpoint_file,
-            )
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "train_loss": avg_loss,
+                "val_loss": val_loss,
+                "val_mae": val_mae,
+                "best_loss": best_loss,
+                "train_losses": train_losses,
+                "train_mae": train_mae,
+                "val_losses": val_losses,
+                "val_mae_scores": val_mae_scores,
+            }
+            if use_amp and device.type == "cuda" and scaler is not None:
+                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+            torch.save(checkpoint_data, checkpoint_file)
             print(f"Saved checkpoint at epoch {epoch+1}")
 
     print(f"Training completed. Best val loss: {best_loss:.6f}, Final val MAE: {val_mae:.6f}")
