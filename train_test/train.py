@@ -238,7 +238,7 @@ def train(
     num_middle_hidden_layers: int = 1,
     # equivariant layers
     equi_update_method: str = "tpconv_with_edge",
-    num_equi_layers: int = 3,
+    num_equi_layers: int = 4,
     tp_method: str = "so2",
     scalar_dim: int = 16,
     vec_dim: int = 8,

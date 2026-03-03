@@ -90,6 +90,11 @@ def scalar_test(
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    # Move all models to the correct device and set to evaluation mode
+    for key in scalar_models:
+        scalar_models[key] = scalar_models[key].to(device)
+        scalar_models[key].eval()
+    
     results = {}
 
     with torch.no_grad():

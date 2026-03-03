@@ -4,8 +4,8 @@ from torch_scatter import scatter
 import torch.nn.functional as F
 
 
-class BaseInvariantLayer(nn.Module):
-    """Base class containing shared parameters and common functionality."""
+class BiasGATLayer(nn.Module):
+    """Implementation of the bias GAT update mechanism."""
     def __init__(self, scalar_dim: int):
         super().__init__()
         self.scalar_dim = scalar_dim
@@ -50,6 +50,56 @@ class BaseInvariantLayer(nn.Module):
         message = attn * v
         return message, attn
 
+    def bias_gat_update(
+        self,
+        atom_feature: torch.Tensor,
+        edge_feature: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        src, dst = edge_index
+        src_feature = atom_feature[src]
+        dst_feature = atom_feature[dst]
+        message, attn = self.bias_gat_attn(src_feature, dst_feature, edge_feature)
+        num_nodes = atom_feature.size(0)
+        atom_feature = atom_feature + scatter(
+            message, dst, dim=0, dim_size=num_nodes, reduce="sum"
+        )
+        edge_feature = edge_feature + attn
+        return atom_feature, edge_feature
+
+    def forward(
+        self,
+        atom_feature: torch.Tensor,
+        edge_feature: torch.Tensor,
+        edge_index: torch.Tensor,
+    ):
+        return self.bias_gat_update(atom_feature, edge_feature, edge_index)
+
+
+class ComformerLayer(nn.Module):
+    """Implementation of the ComFormer update mechanism."""
+    def __init__(self, scalar_dim: int):
+        super().__init__()
+        self.scalar_dim = scalar_dim
+        self.q_lin = nn.Linear(scalar_dim, scalar_dim)
+        self.k_lin = nn.Linear(scalar_dim, scalar_dim)
+        self.v_lin = nn.Linear(scalar_dim, scalar_dim)
+        self.e_lin = nn.Linear(scalar_dim, scalar_dim)
+        self.alpha_bn = nn.BatchNorm1d(scalar_dim)
+        self.message_bn = nn.BatchNorm1d(scalar_dim)
+        self.act = nn.Softplus()
+        self.k_mlp = nn.Sequential(
+            nn.Linear(scalar_dim * 3, scalar_dim),
+            nn.SiLU(),
+            nn.Linear(scalar_dim, scalar_dim),
+        )
+        self.v_mlp = nn.Sequential(
+            nn.Linear(scalar_dim * 3, scalar_dim),
+            nn.SiLU(),
+            nn.Linear(scalar_dim, scalar_dim),
+        )
+        self.gate = nn.Sigmoid()
+
     def comformer_node_attn(
         self,
         src_feature: torch.Tensor,  # (num_edges, scalar_dim)
@@ -87,48 +137,6 @@ class BaseInvariantLayer(nn.Module):
         message = self.message_bn(self.gate(alpha) * v)
         return message
 
-
-class BiasGATLayer(BaseInvariantLayer):
-    """Implementation of the bias GAT update mechanism."""
-    def __init__(self, scalar_dim: int):
-        super().__init__(scalar_dim)
-
-    def bias_gat_update(
-        self,
-        atom_feature: torch.Tensor,  # (num_nodes, scalar_dim)
-        edge_feature: torch.Tensor,  # (num_edges, scalar_dim)
-        edge_index: torch.Tensor,  # (2, num_edges)
-    ) -> torch.Tensor:
-        src, dst = edge_index
-        # src_feature: (num_edges, scalar_dim)
-        src_feature = atom_feature[src]
-        # dst_feature: (num_edges, scalar_dim)
-        dst_feature = atom_feature[dst]
-        # message: (num_edges, scalar_dim)
-        message, attn = self.bias_gat_attn(src_feature, dst_feature, edge_feature)
-        # atom_feature: (num_nodes, scalar_dim)
-        num_nodes = atom_feature.size(0)
-        atom_feature = atom_feature + scatter(
-            message, dst, dim=0, dim_size=num_nodes, reduce="sum"
-        )
-        # edge_feature: (num_edges, scalar_dim)
-        edge_feature = edge_feature + attn
-        return atom_feature, edge_feature
-
-    def forward(
-        self,
-        atom_feature: torch.Tensor,  # (num_nodes, scalar_dim)
-        edge_feature: torch.Tensor,  # (num_edges, scalar_dim)
-        edge_index: torch.Tensor,  # (2, num_edges)
-    ):
-        return self.bias_gat_update(atom_feature, edge_feature, edge_index)
-
-
-class ComformerLayer(BaseInvariantLayer):
-    """Implementation of the ComFormer update mechanism."""
-    def __init__(self, scalar_dim: int):
-        super().__init__(scalar_dim)
-
     def comformer_update(
         self,
         atom_feature: torch.Tensor,  # (num_nodes, scalar_dim)
@@ -164,8 +172,8 @@ class ComformerLayer(BaseInvariantLayer):
 
 class InvariantLayer(nn.Module):
     """
-    Original InvariantLayer class maintained for backward compatibility.
-    Creates either a BiasGATLayer or ComformerLayer based on the update_method parameter.
+    InvariantLayer class that creates either a BiasGATLayer or ComformerLayer
+    based on the update_method parameter.
     """
     def __init__(self, update_method: str, scalar_dim: int):
         super().__init__()

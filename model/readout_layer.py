@@ -8,7 +8,7 @@ import numpy as np
 
 from .utils import full2voigt, voigt2full, _l_max
 
-class GMTReadoutLayer(nn.Module):
+class ReadoutViaGradLayer(nn.Module):
     def __init__(self, l_max: int, symmetry: str = None):
         super().__init__()
         self.l_max = l_max

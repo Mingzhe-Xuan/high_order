@@ -17,36 +17,17 @@ class BaseEquivariantLayer(nn.Module):
     def __init__(
         self,
         irreps_in: Union[str, Irreps],
-        irreps_out: Union[str, Irreps],  # l of irreps_in lifted
-        irreps_vec: Optional[Union[str, Irreps]] = None,  # for relative position vector
-        irreps_hidden: Optional[
-            Union[str, Irreps, None]
-        ] = None,  # for tp twice in equiformer
-        tp_method: str = "fully_connected",
+        irreps_out: Union[str, Irreps],
+        irreps_vec: Optional[Union[str, Irreps]] = None,
+        irreps_hidden: Optional[Union[str, Irreps, None]] = None,
         residual: bool = True,
     ):
         super().__init__()
         self.residual = residual
         self.irreps_in = Irreps(irreps_in)
         self.irreps_out = Irreps(irreps_out)
-        if irreps_vec is not None:
-            self.irreps_vec = Irreps(irreps_vec)
-        else:
-            self.irreps_vec = self.irreps_in
-
-        if irreps_hidden is None:
-            irreps_hidden = self.irreps_in
-        self.irreps_hidden = Irreps(irreps_hidden)
-        scalar_irreps = [(mul, (l, p)) for mul, (l, p) in self.irreps_hidden if l == 0]
-        self.irreps_scalar = Irreps(scalar_irreps)
-        non_scalar_irreps = [
-            (mul, (l, p)) for mul, (l, p) in self.irreps_hidden if l > 0
-        ]
-        self.irreps_non_scalar = Irreps(non_scalar_irreps)
-
-        self.i_scalar = self.irreps_scalar.dim
-        self.tp_method = tp_method
-        self.tp = get_tp(tp_method, self.irreps_in, self.irreps_vec, self.irreps_out)
+        self.irreps_vec = Irreps(irreps_vec) if irreps_vec is not None else self.irreps_in
+        self.irreps_hidden = Irreps(irreps_hidden) if irreps_hidden is not None else self.irreps_in
 
     def compute_spherical_harmonics(self, edge_vector: torch.Tensor):
         """Compute spherical harmonics for edge vectors."""
@@ -82,8 +63,17 @@ class EquiformerLayer(BaseEquivariantLayer):
         tp_method: str = "fully_connected",
         residual: bool = True,
     ):
-        super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual)
+        super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, residual)
         
+        self.tp_method = tp_method
+        
+        scalar_irreps = [(mul, (l, p)) for mul, (l, p) in self.irreps_hidden if l == 0]
+        self.irreps_scalar = Irreps(scalar_irreps)
+        non_scalar_irreps = [
+            (mul, (l, p)) for mul, (l, p) in self.irreps_hidden if l > 0
+        ]
+        self.irreps_non_scalar = Irreps(non_scalar_irreps)
+
         self.lin_src = Linear(self.irreps_in, self.irreps_in)
         self.lin_dst = Linear(self.irreps_in, self.irreps_in)
 
@@ -96,15 +86,11 @@ class EquiformerLayer(BaseEquivariantLayer):
                 "equiformer requires irreps_hidden to contain at least one non-scalar (l>0) irreps"
             )
 
-        # Gate requires irreps_gates.num_irreps == irreps_gated.num_irreps
-        # We need to adjust irreps_hidden to match this requirement
         num_scalar_irreps = self.irreps_scalar.num_irreps
         num_non_scalar_irreps = self.irreps_non_scalar.num_irreps
 
         if num_scalar_irreps != num_non_scalar_irreps:
-            # Adjust irreps_hidden to make num_irreps match
             if num_scalar_irreps > num_non_scalar_irreps:
-                # Reduce scalar multiplicities
                 new_scalar_irreps = []
                 remaining = num_non_scalar_irreps
                 for mul, (l, p) in self.irreps_scalar:
@@ -115,24 +101,20 @@ class EquiformerLayer(BaseEquivariantLayer):
                     remaining -= take
                 self.irreps_scalar = Irreps(new_scalar_irreps)
             else:
-                # Increase scalar multiplicities
                 new_scalar_irreps = []
                 remaining = num_non_scalar_irreps
                 for mul, (l, p) in self.irreps_scalar:
                     while remaining > 0:
                         new_scalar_irreps.append((mul, (l, p)))
                         remaining -= mul
-                # Remove excess
                 if remaining < 0:
-                    # Adjust the last element
                     last_mul, last_irrep = new_scalar_irreps[-1]
                     new_scalar_irreps[-1] = (last_mul + remaining, last_irrep)
                 self.irreps_scalar = Irreps(new_scalar_irreps)
 
-            # Update irreps_hidden and i_scalar
             self.irreps_hidden = self.irreps_scalar + self.irreps_non_scalar
-            self.i_scalar = self.irreps_scalar.dim
 
+        self.i_scalar = self.irreps_scalar.dim
         self.tp1 = get_tp(
             tp_method, self.irreps_in, self.irreps_vec, self.irreps_hidden
         )
@@ -225,7 +207,10 @@ class TpconvLayer(BaseEquivariantLayer):
         tp_method: str = "fully_connected",
         residual: bool = True,
     ):
-        super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual)
+        super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, residual)
+        
+        self.tp_method = tp_method
+        self.tp = get_tp(tp_method, self.irreps_in, self.irreps_vec, self.irreps_out)
 
     def tpconv_update(
         self,
@@ -285,8 +270,9 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         tp_method: str = "fully_connected",
         residual: bool = True,
     ):
-        super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual)
-        # Override the tp to combine node features with edge features
+        super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, residual)
+        
+        self.tp_method = tp_method
         self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
 
     def tpconv_with_edge_update(
@@ -354,20 +340,6 @@ class EquivariantLayer(nn.Module):
         super().__init__()
         self.residual = residual
         self.update_method = update_method
-        # if update_method == "equiformer":
-        #     self.layer = EquiformerLayer(
-        #         irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
-        #     )
-        # elif update_method == "tpconv":
-        #     self.layer = TpconvLayer(
-        #         irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
-        #     )
-        # elif update_method == "tpconv_with_edge":
-        #     self.layer = TpconvWithEdgeLayer(
-        #         irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
-        #     )
-        # else:
-        #     raise NotImplementedError(f"Not implemented yet: {update_method}")
         assert update_method == "tpconv_with_edge", "Only tpconv_with_edge is supported for now"
         self.layer = TpconvWithEdgeLayer(
             irreps_in, irreps_out, irreps_vec, irreps_hidden, tp_method, residual
@@ -380,16 +352,10 @@ class EquivariantLayer(nn.Module):
         edge_index: torch.Tensor,
         edge_feature: Optional[torch.Tensor] = None,
     ):
-        if hasattr(self.layer, "forward"):
-            # Handle the different forward signatures
-            if isinstance(self.layer, TpconvWithEdgeLayer):
-                assert (
-                    edge_feature is not None
-                ), "edge_feature cannot be None if update_method is tpconv_with_edge"
-                return self.layer(atom_feature, edge_vector, edge_index, edge_feature)
-            else:
-                return self.layer(atom_feature, edge_vector, edge_index)
+        if isinstance(self.layer, TpconvWithEdgeLayer):
+            assert (
+                edge_feature is not None
+            ), "edge_feature cannot be None if update_method is tpconv_with_edge"
+            return self.layer(atom_feature, edge_vector, edge_index, edge_feature)
         else:
-            raise NotImplementedError(
-                f"Forward method not implemented for {type(self.layer)}"
-            )
+            return self.layer(atom_feature, edge_vector, edge_index)
