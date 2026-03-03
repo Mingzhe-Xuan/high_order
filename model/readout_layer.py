@@ -186,7 +186,10 @@ class ReadoutLayer(nn.Module):
                 linear_out = Linear(irreps_out, self.cartesian_tensor)
                 global_feature = linear_out(global_feature)
 
-            cart_property = self.cartesian_tensor.to_cartesian(global_feature)
+            if self.l_max == 0:
+                cart_property = global_feature
+            else:
+                cart_property = self.cartesian_tensor.to_cartesian(global_feature)
             # if "dielectric" in property_name:
             #     return cart_property
             # elif "piezoelectric" in property_name:
