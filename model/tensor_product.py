@@ -146,23 +146,34 @@ class SO2_Linear(torch.nn.Module):
         self.fc_m0 = Linear(
             self.irreps_in.num_irreps, self.irreps_out.num_irreps, bias=True
         )
+        # Only create m_linear layers for m where both input and output have features
+        # SO2_m_Linear requires both irreps_in.lmax >= m and irreps_out.lmax >= m
         for m in range(1, min(self.irreps_in.lmax, self.irreps_out.lmax) + 1):
             self.m_linear.append(SO2_m_Linear(m, self.irreps_in, self.irreps_out))
 
-        # generate m mask
+        # Calculate lmax_max first for mask initialization
+        l_values_in = [
+            l
+            for (_, (l, _)), _ in zip(self.irreps_in, self.irreps_in.slices())
+            if l > 0
+        ]
+        self.l_max = max(l_values_in) if l_values_in else 0
+        self.lmax_max = max(self.l_max, self.irreps_out.lmax)
+
+        # generate m mask - use lmax_max to avoid index out of bounds
         self.m_in_mask = torch.zeros(
-            self.irreps_in.lmax + 1, self.irreps_in.dim, dtype=torch.bool
+            self.lmax_max + 1, self.irreps_in.dim, dtype=torch.bool
         )
         self.m_out_mask = torch.zeros(
-            self.irreps_in.lmax + 1, self.irreps_out.dim, dtype=torch.bool
+            self.lmax_max + 1, self.irreps_out.dim, dtype=torch.bool
         )
 
         if self.irreps_in.dim <= self.irreps_out.dim:
             front = True
-            self.m_in_num = [0] * (self.irreps_in.lmax + 1)
+            self.m_in_num = [0] * (self.lmax_max + 1)
         else:
             front = False
-            self.m_in_num = [0] * (self.irreps_out.lmax + 1)
+            self.m_in_num = [0] * (self.lmax_max + 1)
 
         offset = 0
         for mul, (l, p) in self.irreps_in:
@@ -194,15 +205,11 @@ class SO2_Linear(torch.nn.Module):
             )
         self.front = front
 
-        self.l_max = max(
-            l
-            for (_, (l, _)), _ in zip(self.irreps_in, self.irreps_in.slices())
-            if l > 0
-        )
-        self.dims = {l: 2 * l + 1 for l in range(self.l_max + 1)}
+        # l_max and lmax_max already calculated above
+        self.dims = {l: 2 * l + 1 for l in range(self.lmax_max + 1)}
         self.offsets = {}
         offset = 0
-        for l in range(self.l_max + 1):
+        for l in range(self.lmax_max + 1):
             self.offsets[l] = offset
             offset += self.dims[l]
 
@@ -216,8 +223,9 @@ class SO2_Linear(torch.nn.Module):
         angle = xyz_to_angles(R[:, [1, 2, 0]])
 
         # Compute Wigner D matrices for all l at once
+        # Use lmax_max to ensure we have rotation matrices for output irreps
         wigner_D_all = batch_wigner_D(
-            self.l_max, angle[0], angle[1], torch.zeros_like(angle[0]), _Jd
+            self.lmax_max, angle[0], angle[1], torch.zeros_like(angle[0]), _Jd
         )
 
         # 1. group irreps by l
@@ -253,6 +261,15 @@ class SO2_Linear(torch.nn.Module):
 
         out = torch.zeros(n, self.irreps_out.dim, dtype=x.dtype, device=x.device)
         for m in range(self.irreps_out.lmax + 1):
+            # Skip if m is beyond input irreps (no input features for this m)
+            if m > self.irreps_in.lmax:
+                continue
+            
+            # Skip if m is beyond what m_linear can handle
+            # m_linear only exists for m <= min(irreps_in.lmax, irreps_out.lmax)
+            if m > 0 and m > min(self.irreps_in.lmax, self.irreps_out.lmax):
+                continue
+                
             radial_weight = (
                 weights[:, self.m_in_index[m] : self.m_in_index[m + 1]].unsqueeze(1)
                 if self.radial_emb

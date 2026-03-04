@@ -29,8 +29,10 @@ class BaseEquivariantLayer(nn.Module):
         self.irreps_vec = Irreps(irreps_vec) if irreps_vec is not None else self.irreps_in
         self.irreps_hidden = Irreps(irreps_hidden) if irreps_hidden is not None else self.irreps_in
 
-    def compute_spherical_harmonics(self, edge_vector: torch.Tensor):
+    def compute_spherical_harmonics(self, edge_vector: torch.Tensor, irreps_vec: Irreps = None):
         """Compute spherical harmonics for edge vectors."""
+        if irreps_vec is not None:
+            return spherical_harmonics(irreps_vec, edge_vector, normalize=True)
         return spherical_harmonics(self.irreps_vec, edge_vector, normalize=True)
 
     def aggregate_messages(
@@ -295,7 +297,7 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         dst_feature = atom_feature[dst]
         # message: (num_edges, irreps_out.dim)
         if self.irreps_in.lmax == 0:
-            edge_sh = self.compute_spherical_harmonics(edge_vector)
+            edge_sh = self.compute_spherical_harmonics(edge_vector, self.irreps_out)
             message = self.tp(src_feature, edge_sh)
         else:
             message = self.tp(src_feature, edge_feature)
