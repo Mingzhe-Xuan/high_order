@@ -183,6 +183,8 @@ def main(
             num_workers=num_workers,
             shuffle=True,
         )
+    else:
+        self_trainset = None
     if need_scalar_train:
         scalar_dataloaders = _create_scalar_dataloaders(
             name_path_dict,
@@ -194,6 +196,8 @@ def main(
             pin_memory,
             num_workers,
         )
+    else:
+        scalar_dataloaders = None
     if need_tensor_train:
         tensor_dataloaders = _create_tensor_dataloaders(
             name_path_dict,
@@ -205,6 +209,8 @@ def main(
             pin_memory,
             num_workers,
         )
+    else:
+        tensor_dataloaders = None
     # Train
     print("Start training...")
     (

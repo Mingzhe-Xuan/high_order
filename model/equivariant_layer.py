@@ -273,7 +273,7 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         super().__init__(irreps_in, irreps_out, irreps_vec, irreps_hidden, residual)
         
         self.tp_method = tp_method
-        if irreps_in.lmax == 0:
+        if self.irreps_in.lmax == 0:
             self.tp = get_tp(tp_method, self.irreps_in, self.irreps_vec, self.irreps_out)
         else:
             self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
