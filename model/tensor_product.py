@@ -321,7 +321,8 @@ class SO2_Linear(torch.nn.Module):
                 rot_mat = wigner_D_all[
                     :, start : start + self.dims[l], start : start + self.dims[l]
                 ]
-                x_slice = out[:, slice_in].reshape(n, mul, -1)
+                # Use clone to avoid inplace operation issue
+                x_slice = out[:, slice_in].reshape(n, mul, -1).clone()
                 rotated = torch.einsum("nij,nmj->nmi", rot_mat, x_slice)
                 out[:, slice_in] = rotated.reshape(n, -1)
 

@@ -160,10 +160,11 @@ def full2voigt(l_max: int, full_tensor: torch.Tensor) -> torch.Tensor:
     elif l_max == 1:
         return full_tensor.view(batch_size, 3)
     elif l_max == 2:
-        result = []
-        for i, j in voigt_indices:
-            result.append(full_tensor[:, i, j])
-        return torch.stack(result, dim=-1)
+        # result = []
+        # for i, j in voigt_indices:
+        #     result.append(full_tensor[:, i, j])
+        # return torch.stack(result, dim=-1)
+        return full_tensor.view(batch_size, 3, 3)
     elif l_max == 3:
         result = []
         for i in range(3):

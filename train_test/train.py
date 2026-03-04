@@ -80,7 +80,7 @@ def _create_shared_components(
                 irreps_out=irreps_list[i + 1],
                 irreps_vec=irreps_vec,
                 tp_method=tp_method,
-                residual=True,
+                residual=False,
             )
             for i in range(num_equi_layers)
         ]
