@@ -18,6 +18,7 @@ _idx_data = torch.load(
     weights_only=False,
 )
 
+
 def build_z_rot_multi(angle_stack, mask, freq, reversed_inds, offsets, sizes):
     """
     angle_stack: (3*N, )    # Input with alpha, beta, gamma stacked together
@@ -145,7 +146,7 @@ class SO2_Linear(torch.nn.Module):
         self.fc_m0 = Linear(
             self.irreps_in.num_irreps, self.irreps_out.num_irreps, bias=True
         )
-        for m in range(1, self.irreps_out.lmax + 1):
+        for m in range(1, min(self.irreps_in.lmax, self.irreps_out.lmax) + 1):
             self.m_linear.append(SO2_m_Linear(m, self.irreps_in, self.irreps_out))
 
         # generate m mask

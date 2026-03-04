@@ -274,7 +274,7 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         
         self.tp_method = tp_method
         if self.irreps_in.lmax == 0:
-            self.tp = get_tp(tp_method, self.irreps_in, self.irreps_vec, self.irreps_out)
+            self.tp = get_tp("fully_connected", self.irreps_in, self.irreps_out, self.irreps_out)
         else:
             self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
 

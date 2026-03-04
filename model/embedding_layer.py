@@ -68,6 +68,7 @@ class EmbeddingLayer(nn.Module):
         cutoff: float,
     ):
         super().__init__()
+        self.embed_dim = embed_dim
         self.embed_atom = EmbedAtom(embed_dim, max_atom_type)
         self.embed_dist = EmbedDist(dist_emb_func, embed_dim, cutoff)
 

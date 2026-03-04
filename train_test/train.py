@@ -132,7 +132,7 @@ def _create_scalar_models(
         )
 
         final_mlp = FinalMLP(
-            irreps_in=Irreps(irreps_list[-1]).dim,
+            irreps_in=Irreps(irreps_list[-1]),
             irreps_hidden=final_irreps_hidden,
             irreps_out=final_irreps_out,
             num_hidden_layers=num_final_hidden_layers,
@@ -188,17 +188,18 @@ def _create_tensor_models(
     #     "piezoelectric_e_Angst": {"l_max": 2, "symmetry": "i,jk=kj"},
     # }
 
+    embed_dim = embedding_layer.embed_dim
     for prop in tensor_properties:
         # Create model components for each property
         middle_mlp = MiddleMLP(
-            scalar_dim_in=Irreps(irreps_list[-1]).dim,  # Different from scalar models
+            scalar_dim_in=embed_dim,
             scalar_dim_hidden=middle_scalar_hidden_dim,
             scalar_dim_out=scalar_dim,
             num_hidden_layers=num_middle_hidden_layers,
         )
 
         final_mlp = FinalMLP(
-            irreps_in=Irreps(irreps_list[-1]).dim,
+            irreps_in=Irreps(irreps_list[-1]),
             irreps_hidden=final_irreps_hidden,
             irreps_out=final_irreps_out,
             num_hidden_layers=num_final_hidden_layers,
@@ -401,7 +402,7 @@ def train(
             num_hidden_layers=num_middle_hidden_layers,
         )
         self_final_mlp = FinalMLP(
-            irreps_in=Irreps(irreps_list[-1]).dim,
+            irreps_in=Irreps(irreps_list[-1]),
             irreps_hidden=final_irreps_hidden,
             irreps_out=final_irreps_out,
             num_hidden_layers=num_final_hidden_layers,
