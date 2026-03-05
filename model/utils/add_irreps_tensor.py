@@ -3,6 +3,99 @@ import torch
 from typing import Union
 
 
+def get_intersection_irreps(irreps1: Union[str, Irreps], irreps2: Union[str, Irreps]) -> Irreps:
+    """
+    Get the intersection of two irreps, taking the minimum multiplicity for each (l, p).
+    """
+    if isinstance(irreps1, str):
+        irreps1 = Irreps(irreps1)
+    if isinstance(irreps2, str):
+        irreps2 = Irreps(irreps2)
+    
+    irreps1 = irreps1.sort()[0].simplify()
+    irreps2 = irreps2.sort()[0].simplify()
+    
+    mul_dict1 = {ir: mul for mul, ir in irreps1}
+    mul_dict2 = {ir: mul for mul, ir in irreps2}
+    
+    intersection = []
+    for ir in mul_dict1:
+        if ir in mul_dict2:
+            intersection.append((min(mul_dict1[ir], mul_dict2[ir]), ir))
+    
+    return Irreps(intersection)
+
+
+def selective_residual_add(
+    irreps_in: Union[str, Irreps],
+    irreps_out: Union[str, Irreps],
+    input_tensor: torch.Tensor,
+    output_tensor: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Add residual connection only for common irrep components between irreps_in and irreps_out.
+    
+    For common (l, p) components: output = input + transformed_output
+    For components only in irreps_out: output = transformed_output
+    
+    Returns a tensor with shape matching irreps_out.dim
+    """
+    if isinstance(irreps_in, str):
+        irreps_in = Irreps(irreps_in)
+    if isinstance(irreps_out, str):
+        irreps_out = Irreps(irreps_out)
+    
+    irreps_in = irreps_in.sort()[0].simplify()
+    irreps_out = irreps_out.sort()[0].simplify()
+    
+    batch_size = output_tensor.shape[0]
+    device = output_tensor.device
+    dtype = output_tensor.dtype
+    
+    result = torch.zeros(batch_size, irreps_out.dim, device=device, dtype=dtype)
+    
+    mul_dict_in = {ir: mul for mul, ir in irreps_in}
+    slices_in = list(irreps_in.slices())
+    slices_out = list(irreps_out.slices())
+    
+    in_offset = 0
+    for i, (mul_out, ir_out) in enumerate(irreps_out):
+        slice_out = slices_out[i]
+        dim_out = mul_out * (2 * ir_out.l + 1)
+        
+        if ir_out in mul_dict_in:
+            mul_in = mul_dict_in[ir_out]
+            dim_in = mul_in * (2 * ir_out.l + 1)
+            
+            in_idx = None
+            cumsum = 0
+            for j, (mul_j, ir_j) in enumerate(irreps_in):
+                if ir_j == ir_out:
+                    in_idx = j
+                    break
+                cumsum += mul_j * (2 * ir_j.l + 1)
+            
+            if in_idx is not None:
+                slice_in = slices_in[in_idx]
+                min_mul = min(mul_in, mul_out)
+                min_dim = min_mul * (2 * ir_out.l + 1)
+                
+                result[:, slice_out.start:slice_out.start + min_dim] = (
+                    input_tensor[:, slice_in.start:slice_in.start + min_dim] +
+                    output_tensor[:, slice_out.start:slice_out.start + min_dim]
+                )
+                
+                if mul_out > mul_in:
+                    extra_dim = (mul_out - mul_in) * (2 * ir_out.l + 1)
+                    result[:, slice_out.start + min_dim:slice_out.stop] = (
+                        output_tensor[:, slice_out.start + min_dim:slice_out.stop]
+                    )
+        else:
+            result[:, slice_out.start:slice_out.stop] = output_tensor[:, slice_out.start:slice_out.stop]
+    
+    return result
+
+
 def get_union_irreps(irreps_list: Union[list[Irreps], list[str]]) -> Irreps:
     # Note that irreps is a tuple of (mul, (l, p)), which is a data type named mul_ir.
     mul_dict = {}

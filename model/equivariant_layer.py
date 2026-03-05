@@ -9,6 +9,7 @@ from e3nn.nn import Gate, BatchNorm
 
 from .tensor_product import get_tp
 from .utils import add_irreps_tensor
+from .utils.add_irreps_tensor import selective_residual_add
 
 
 class BaseEquivariantLayer(nn.Module):
@@ -181,8 +182,11 @@ class EquiformerLayer(BaseEquivariantLayer):
                 hidden_out, dst, num_nodes, atom_feature.device, atom_feature.dtype
             )
         if self.residual:
-            atom_feature = add_irreps_tensor(
-                [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]
+            # atom_feature = add_irreps_tensor(
+            #     [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]
+            # )
+            atom_feature = selective_residual_add(
+                self.irreps_in, self.irreps_out, atom_feature, aggregated_message
             )
         else:
             atom_feature = aggregated_message
@@ -244,8 +248,11 @@ class TpconvLayer(BaseEquivariantLayer):
             message, dst, num_nodes, atom_feature.device, atom_feature.dtype
         )
         if self.residual:
-            atom_feature = add_irreps_tensor(
-                [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]
+            # atom_feature = add_irreps_tensor(
+            #     [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]
+            # )
+            atom_feature = selective_residual_add(
+                self.irreps_in, self.irreps_out, atom_feature, aggregated_message
             )
         else:
             atom_feature = aggregated_message
@@ -307,11 +314,17 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
             message, dst, num_nodes, atom_feature.device, atom_feature.dtype
         )
         if self.residual:
-            atom_feature = add_irreps_tensor(
-                [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]
+            # atom_feature = add_irreps_tensor(
+            #     [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]
+            # )
+            # edge_feature = add_irreps_tensor(
+            #     [self.irreps_in, self.irreps_out], [edge_feature, message]
+            # )
+            atom_feature = selective_residual_add(
+                self.irreps_in, self.irreps_out, atom_feature, aggregated_message
             )
-            edge_feature = add_irreps_tensor(
-                [self.irreps_in, self.irreps_out], [edge_feature, message]
+            edge_feature = selective_residual_add(
+                self.irreps_in, self.irreps_out, edge_feature, message
             )
         else:
             atom_feature = aggregated_message
