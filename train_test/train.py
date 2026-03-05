@@ -394,6 +394,9 @@ def train(
     )
 
     # Self train
+    scalar_train_history = {}
+    tensor_train_history = {}
+
     if need_self_train:
         self_middle_mlp = MiddleMLP(
             scalar_dim_in=embed_dim,
@@ -423,7 +426,6 @@ def train(
             irreps_list=irreps_list,
         )
 
-        # Execute self training
         self_trained_model = self_train(
             embedding_layer=embedding_layer,
             invariant_layers=invariant_layers,
@@ -448,15 +450,10 @@ def train(
             use_amp=use_amp,
         )
 
-        # save the shared layers
         embedding_layer = self_trained_model.embedding_layer
         invariant_layers = self_trained_model.invariant_layers
         equivariant_layers = self_trained_model.equivariant_layers
 
-    ######## Here the training strategy is train the model property by property,  ########
-    ######## which can be improved to train one batch for each property one time. ########
-    ######## Or simply repeat the training process multiple times.                ########
-    # Scalar train - create models for all scalar properties
     if need_scalar_train:
         scalar_models = _create_scalar_models(
             scalar_properties,
@@ -474,9 +471,8 @@ def train(
             num_final_hidden_layers,
         )
 
-        # Execute scalar training for each property
         for prop in scalar_properties:
-            scalar_models[f"{prop}_model"] = scalar_train(
+            trained_model, history = scalar_train(
                 property_name=prop,
                 embedding_layer=embedding_layer,
                 invariant_layers=invariant_layers,
@@ -501,13 +497,15 @@ def train(
                 limit=scalar_limit,
                 use_amp=use_amp,
             )
+            scalar_models[f"{prop}_model"] = trained_model
+            scalar_train_history[prop] = history
 
-            # save the shared layers
-            embedding_layer = scalar_models[f"{prop}_model"].embedding_layer
-            invariant_layers = scalar_models[f"{prop}_model"].invariant_layers
-            equivariant_layers = scalar_models[f"{prop}_model"].equivariant_layers
+            embedding_layer = trained_model.embedding_layer
+            invariant_layers = trained_model.invariant_layers
+            equivariant_layers = trained_model.equivariant_layers
+    else:
+        scalar_models = None
 
-    # Tensor train - create models for all tensor properties
     if need_tensor_train:
         tensor_models = _create_tensor_models(
             tensor_properties,
@@ -525,9 +523,8 @@ def train(
             num_final_hidden_layers,
         )
 
-        # Execute tensor training for each property
         for prop in tensor_properties:
-            tensor_models[f"{prop}_model"] = tensor_train(
+            trained_model, history = tensor_train(
                 property_name=prop,
                 embedding_layer=embedding_layer,
                 invariant_layers=invariant_layers,
@@ -552,12 +549,23 @@ def train(
                 limit=tensor_limit,
                 use_amp=use_amp,
             )
+            tensor_models[f"{prop}_model"] = trained_model
+            tensor_train_history[prop] = history
 
-            # save the shared layers
             equi_shared = True
             if equi_shared:
-                embedding_layer = tensor_models[f"{prop}_model"].embedding_layer
-                invariant_layers = tensor_models[f"{prop}_model"].invariant_layers
-                equivariant_layers = tensor_models[f"{prop}_model"].equivariant_layers
+                embedding_layer = trained_model.embedding_layer
+                invariant_layers = trained_model.invariant_layers
+                equivariant_layers = trained_model.equivariant_layers
+    else:
+        tensor_models = None
 
-    return scalar_models, tensor_models, embedding_layer, invariant_layers, equivariant_layers
+    return (
+        scalar_models,
+        tensor_models,
+        embedding_layer,
+        invariant_layers,
+        equivariant_layers,
+        scalar_train_history,
+        tensor_train_history,
+    )

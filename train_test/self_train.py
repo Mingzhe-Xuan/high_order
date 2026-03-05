@@ -5,33 +5,14 @@ import torch.optim as optim
 from tqdm import tqdm
 import os
 from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 from src.model import Model
 from data import get_mp_dataloader
-
-
-def plot_loss(train_losses: list, save_path: str):
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    path = os.path.join(os.path.dirname(save_path), "self_loss.png")
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        range(1, len(train_losses) + 1),
-        train_losses,
-        label="Training Loss",
-        color="blue",
-    )
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training Loss Over Epochs")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
+from src.train_test.utils.visualization import get_visualization_dir, plot_train_val_metrics
+from src.train_test.utils.checkpoint import (
+    save_checkpoint,
+    load_checkpoint,
+)
 
 
 def self_train(
@@ -42,8 +23,6 @@ def self_train(
     final_mlp,
     readout_layer,
     dataloader,
-    # cutoff: float,
-    # batch_size: int,
     num_epochs: int,
     checkpoint_dir: str = "checkpoints",
     pic_dir: str = "pics",
@@ -51,9 +30,6 @@ def self_train(
     resume_from: str = None,
     save_interval: int = 5,
     clip_grad_norm: float = 1.0,
-    # pin_memory: bool = True,
-    # num_workers: int = 0,
-    # shuffle: bool = True,
     loss_func: str = "huber",
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-5,
@@ -62,6 +38,35 @@ def self_train(
     limit: int = None,
     use_amp: bool = False,
 ):
+    """
+    Self-supervised training for the model using force prediction.
+    
+    Args:
+        embedding_layer: Embedding layer of the model
+        invariant_layers: Invariant layers of the model
+        middle_mlp: Middle MLP layers
+        equivariant_layers: Equivariant layers of the model
+        final_mlp: Final MLP layers
+        readout_layer: Readout layer
+        dataloader: Training dataloader
+        num_epochs: Number of training epochs
+        checkpoint_dir: Directory to save checkpoints (a subfolder with timestamp will be created)
+        pic_dir: Directory to save plots (a subfolder with timestamp will be created)
+        start_epoch: Starting epoch (for resuming)
+        resume_from: Path to resume from checkpoint
+        save_interval: Interval to save checkpoints
+        clip_grad_norm: Gradient clipping norm
+        loss_func: Type of loss function ('huber', 'mse', 'l1')
+        learning_rate: Learning rate for optimizer
+        weight_decay: Weight decay for optimizer
+        optimizer: Type of optimizer ('adamw', 'adam', 'sgd')
+        scheduler: Type of scheduler ('cosine_annealing', 'step')
+        limit: Limit number of epochs (optional)
+        use_amp: Whether to use automatic mixed precision
+
+    Returns:
+        model: The trained model
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = Model(
         embedding_layer,
@@ -73,17 +78,13 @@ def self_train(
     )
     model = model.to(device)
 
-    checkpoint_path = Path(checkpoint_dir)
-    checkpoint_path.mkdir(parents=True, exist_ok=True)
-
     best_loss = float("inf")
     train_losses = []
 
-    # AMP GradScaler
     scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
     if resume_from and os.path.exists(resume_from):
-        checkpoint = torch.load(resume_from, map_location=device)
+        checkpoint = load_checkpoint(resume_from, device)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
@@ -94,17 +95,8 @@ def self_train(
             scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
-    # batches = get_mp_dataloader(
-    #     cutoff=cutoff,
-    #     batch_size=batch_size,
-    #     pin_memory=pin_memory,
-    #     num_workers=num_workers,
-    #     shuffle=shuffle,
-    # )
-
     batches = dataloader
 
-    # Loss function
     if loss_func == "huber":
         loss_fn = nn.HuberLoss()
     elif loss_func == "mse":
@@ -114,7 +106,6 @@ def self_train(
     else:
         raise NotImplementedError(f"loss_func {loss_func} is not implemented")
 
-    # Optimizer
     if optimizer == "adamw":
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     elif optimizer == "adam":
@@ -124,15 +115,12 @@ def self_train(
     else:
         raise NotImplementedError(f"optimizer {optimizer} is not implemented")
 
-    # Scheduler
     if scheduler == "cosine_annealing":
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     elif scheduler == "step":
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
     else:
         raise NotImplementedError(f"scheduler {scheduler} is not implemented")
-
-    os.makedirs(checkpoint_path / "self_train", exist_ok=True)
 
     if limit is None:
         limit = num_epochs
@@ -181,41 +169,54 @@ def self_train(
 
         print(f"Epoch {epoch+1}/{num_epochs}, Avg Loss: {avg_loss:.6f}")
 
+        checkpoint_data = {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "loss": avg_loss,
+            "best_loss": best_loss,
+            "train_losses": train_losses,
+        }
+        if use_amp and device.type == "cuda" and scaler is not None:
+            checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+
         if avg_loss < best_loss:
             best_loss = avg_loss
-            best_checkpoint_path = checkpoint_path / "self_train" / "best_model.pth"
-            checkpoint_data = {
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "scheduler_state_dict": scheduler.state_dict(),
-                "loss": avg_loss,
-                "best_loss": best_loss,
-                "train_losses": train_losses,
-            }
-            if use_amp and device.type == "cuda" and scaler is not None:
-                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
-            torch.save(checkpoint_data, best_checkpoint_path)
-            print(f"Saved best model with loss: {best_loss:.6f}")
+            checkpoint_path = save_checkpoint(
+                checkpoint_data=checkpoint_data,
+                checkpoint_base_dir=checkpoint_dir,
+                property_name="self_train",
+                num_epochs=num_epochs,
+                is_best=True,
+            )
+            print(f"Saved best model with loss: {best_loss:.6f} to {checkpoint_path}")
 
         if (epoch + 1) % save_interval == 0:
-            checkpoint_file = (
-                checkpoint_path / "self_train" / f"checkpoint_epoch_{epoch+1}.pth"
+            checkpoint_path = save_checkpoint(
+                checkpoint_data=checkpoint_data,
+                checkpoint_base_dir=checkpoint_dir,
+                property_name="self_train",
+                num_epochs=num_epochs,
+                epoch=epoch,
             )
-            checkpoint_data = {
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "scheduler_state_dict": scheduler.state_dict(),
-                "loss": avg_loss,
-                "best_loss": best_loss,
-                "train_losses": train_losses,
-            }
-            if use_amp and device.type == "cuda" and scaler is not None:
-                checkpoint_data["scaler_state_dict"] = scaler.state_dict()
-            torch.save(checkpoint_data, checkpoint_file)
-            print(f"Saved checkpoint at epoch {epoch+1}")
+            print(f"Saved checkpoint at epoch {epoch+1} to {checkpoint_path}")
 
     print(f"Training completed. Best loss: {best_loss:.6f}")
-    plot_loss(train_losses, pic_dir)
+    
+    vis_dir = get_visualization_dir(pic_dir)
+    self_train_vis_dir = os.path.join(vis_dir, "self_train")
+    
+    plot_train_val_metrics(
+        train_values=train_losses,
+        val_values=[],
+        save_dir=self_train_vis_dir,
+        property_name="self_train",
+        metric_name="loss",
+        train_color="blue",
+        val_color="orange",
+        title="Self-Training Loss Over Epochs",
+        filename="self_train_loss.png",
+    )
+    
     return model

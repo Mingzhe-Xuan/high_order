@@ -8,7 +8,7 @@ import os
 import torch.nn.functional as F
 from collections import defaultdict
 
-# The implementation of SO2_Linear is copied from deeptb-e3, a.k.a. slem.
+# The implementation of SO2_Linear is revised from deeptb-e3, a.k.a. slem.
 # https://github.com/deepmodeling/DeePTB
 # We hereby thank the authors for their open-source code.
 
