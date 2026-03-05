@@ -155,7 +155,7 @@ def _create_scalar_models(
             irreps_list=irreps_list,
         )
 
-        models[f"{prop}_model"] = model
+        models[prop] = model
 
     return models
 
@@ -223,7 +223,7 @@ def _create_tensor_models(
             irreps_list=irreps_list,
         )
 
-        models[f"{prop}_model"] = model
+        models[prop] = model
 
     return models
 
@@ -476,10 +476,10 @@ def train(
                 property_name=prop,
                 embedding_layer=embedding_layer,
                 invariant_layers=invariant_layers,
-                middle_mlp=scalar_models[f"{prop}_model"].middle_mlp,
+                middle_mlp=scalar_models[prop].middle_mlp,
                 equivariant_layers=equivariant_layers,
-                final_mlp=scalar_models[f"{prop}_model"].final_mlp,
-                readout_layer=scalar_models[f"{prop}_model"].readout_layer,
+                final_mlp=scalar_models[prop].final_mlp,
+                readout_layer=scalar_models[prop].readout_layer,
                 scalar_trainset=scalar_dataloaders[f"{prop}_trainset"],
                 scalar_valset=scalar_dataloaders[f"{prop}_valset"],
                 num_epochs=num_epochs,
@@ -497,7 +497,7 @@ def train(
                 limit=scalar_limit,
                 use_amp=use_amp,
             )
-            scalar_models[f"{prop}_model"] = trained_model
+            scalar_models[prop] = trained_model
             scalar_train_history[prop] = history
 
             embedding_layer = trained_model.embedding_layer
@@ -528,10 +528,10 @@ def train(
                 property_name=prop,
                 embedding_layer=embedding_layer,
                 invariant_layers=invariant_layers,
-                middle_mlp=tensor_models[f"{prop}_model"].middle_mlp,
+                middle_mlp=tensor_models[prop].middle_mlp,
                 equivariant_layers=equivariant_layers,
-                final_mlp=tensor_models[f"{prop}_model"].final_mlp,
-                readout_layer=tensor_models[f"{prop}_model"].readout_layer,
+                final_mlp=tensor_models[prop].final_mlp,
+                readout_layer=tensor_models[prop].readout_layer,
                 tensor_trainset=tensor_dataloaders[f"{prop}_trainset"],
                 tensor_valset=tensor_dataloaders[f"{prop}_valset"],
                 num_epochs=num_epochs,
@@ -549,7 +549,7 @@ def train(
                 limit=tensor_limit,
                 use_amp=use_amp,
             )
-            tensor_models[f"{prop}_model"] = trained_model
+            tensor_models[prop] = trained_model
             tensor_train_history[prop] = history
 
             equi_shared = True

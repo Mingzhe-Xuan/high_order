@@ -6,7 +6,11 @@ from e3nn.o3 import Irreps, Linear
 from typing import Union
 import numpy as np
 
-from .utils import full2voigt, voigt2full, _l_max
+try:
+    from .utils import full2voigt, voigt2full, _l_max
+except ImportError:
+    # For equivariance test
+    from utils import full2voigt, voigt2full, _l_max
 
 class ReadoutViaGradLayer(nn.Module):
     def __init__(self, l_max: int, symmetry: str = None):
@@ -45,6 +49,10 @@ class ReadoutLayer(nn.Module):
         else:
             # CartesianTensor cannot handle l=0 with an empty formula
             self.cartesian_tensor = Irreps("0e")
+        
+        # 用于缓存 Linear 层的字典
+        # 使用 nn.ModuleDict 来确保这些层被 PyTorch 的参数管理系统追踪
+        self._linear_layers = nn.ModuleDict()
 
     # def _l_3_tensor_to_voigt(self, d_ijk):
     #     """
@@ -125,81 +133,93 @@ class ReadoutLayer(nn.Module):
             raise ValueError(
                 f"Unsupported l_max: {self.l_max}. Max supported l_max is {_l_max}."
             )
+
+        # else:
+        #     # if not linear_adaption:
+        #     #     # 获取CartesianTensor的l值列表
+        #     #     cart_ls = self.cartesian_tensor.ls
+        #     #     # 将irreps_out按照l值分组
+        #     #     l_to_features = {}
+        #     #     start_idx = 0
+
+        #     #     for mul, (l, p) in irreps_out:
+        #     #         dim = (2 * l + 1) * mul
+
+        #     #         if l in cart_ls:
+        #     #             if start_idx + dim <= global_feature.shape[1]:
+        #     #                 feature_slice = global_feature[
+        #     #                     :, start_idx : start_idx + dim
+        #     #                 ]
+        #     #             else:
+        #     #                 feature_slice = global_feature[:, start_idx:]
+        #     #                 padding = torch.zeros(
+        #     #                     global_feature.shape[0],
+        #     #                     dim - feature_slice.shape[1],
+        #     #                     device=global_feature.device,
+        #     #                     dtype=global_feature.dtype,
+        #     #                 )
+        #     #                 feature_slice = torch.cat([feature_slice, padding], dim=1)
+
+        #     #             if mul > 1:
+        #     #                 feature_slice = feature_slice.view(
+        #     #                     global_feature.shape[0], mul, 2 * l + 1
+        #     #                 )
+        #     #                 feature_slice = feature_slice.mean(dim=1)
+
+        #     #             if l not in l_to_features:
+        #     #                 l_to_features[l] = []
+        #     #             l_to_features[l].append(feature_slice)
+
+        #     #         start_idx += dim
+
+        #     #     # 为CartesianTensor的每个l值收集特征
+        #     #     pooled_features = []
+        #     #     for l in cart_ls:
+        #     #         if l in l_to_features and l_to_features[l]:
+        #     #             l_features = torch.stack(l_to_features[l], dim=0).mean(dim=0)
+        #     #             pooled_features.append(l_features)
+        #     #         else:
+        #     #             pooled_features.append(
+        #     #                 torch.zeros(
+        #     #                     global_feature.shape[0],
+        #     #                     2 * l + 1,
+        #     #                     device=global_feature.device,
+        #     #                     dtype=global_feature.dtype,
+        #     #                 )
+        #     #             )
+
+        #     #     global_feature = torch.cat(pooled_features, dim=1)
+        #     # else:
+        # Deprecated: parameters of linear layer in this version will be different
+        # each time call the forward method, which is not what we want.
+        # More importantly, this will destroy the equivariance of the model
+        # if we use the model multiple times.
+        #         linear_out = Linear(irreps_out, self.cartesian_tensor)
+        #         global_feature = linear_out(global_feature)
+
+        # 创建或获取 Linear 层
+        irreps_key = str(irreps_out)
+        
+        if irreps_key not in self._linear_layers:
+            self._linear_layers[irreps_key] = Linear(irreps_out, self.cartesian_tensor)
+        
+        linear_out = self._linear_layers[irreps_key]
+        global_feature = linear_out(global_feature)
+
+        if self.l_max == 0:
+            cart_property = global_feature
         else:
-            # if not linear_adaption:
-            #     # 获取CartesianTensor的l值列表
-            #     cart_ls = self.cartesian_tensor.ls
-
-            #     # 将irreps_out按照l值分组
-            #     l_to_features = {}
-            #     start_idx = 0
-
-            #     for mul, (l, p) in irreps_out:
-            #         dim = (2 * l + 1) * mul
-
-            #         if l in cart_ls:
-            #             if start_idx + dim <= global_feature.shape[1]:
-            #                 feature_slice = global_feature[
-            #                     :, start_idx : start_idx + dim
-            #                 ]
-            #             else:
-            #                 feature_slice = global_feature[:, start_idx:]
-            #                 padding = torch.zeros(
-            #                     global_feature.shape[0],
-            #                     dim - feature_slice.shape[1],
-            #                     device=global_feature.device,
-            #                     dtype=global_feature.dtype,
-            #                 )
-            #                 feature_slice = torch.cat([feature_slice, padding], dim=1)
-
-            #             if mul > 1:
-            #                 feature_slice = feature_slice.view(
-            #                     global_feature.shape[0], mul, 2 * l + 1
-            #                 )
-            #                 feature_slice = feature_slice.mean(dim=1)
-
-            #             if l not in l_to_features:
-            #                 l_to_features[l] = []
-            #             l_to_features[l].append(feature_slice)
-
-            #         start_idx += dim
-
-            #     # 为CartesianTensor的每个l值收集特征
-            #     pooled_features = []
-            #     for l in cart_ls:
-            #         if l in l_to_features and l_to_features[l]:
-            #             l_features = torch.stack(l_to_features[l], dim=0).mean(dim=0)
-            #             pooled_features.append(l_features)
-            #         else:
-            #             pooled_features.append(
-            #                 torch.zeros(
-            #                     global_feature.shape[0],
-            #                     2 * l + 1,
-            #                     device=global_feature.device,
-            #                     dtype=global_feature.dtype,
-            #                 )
-            #             )
-
-            #     global_feature = torch.cat(pooled_features, dim=1)
-            # else:
-            if True:
-                linear_out = Linear(irreps_out, self.cartesian_tensor)
-                global_feature = linear_out(global_feature)
-
-            if self.l_max == 0:
-                cart_property = global_feature
-            else:
-                cart_property = self.cartesian_tensor.to_cartesian(global_feature)
-            # if "dielectric" in property_name:
-            #     return cart_property
-            # elif "piezoelectric" in property_name:
-            #     return torch.from_numpy(
-            #         self._l_3_tensor_to_voigt(cart_property.cpu().numpy())
-            #     )
-            # elif "elastic" in property_name:
-            #     return torch.from_numpy(
-            #         self._l_4_tensor_to_voigt(cart_property.cpu().numpy())
-            #     )
-            # else:
-            #     raise NotImplementedError("property_name not supported")
-            return full2voigt(self.l_max, cart_property)
+            cart_property = self.cartesian_tensor.to_cartesian(global_feature)
+        # if "dielectric" in property_name:
+        #     return cart_property
+        # elif "piezoelectric" in property_name:
+        #     return torch.from_numpy(
+        #         self._l_3_tensor_to_voigt(cart_property.cpu().numpy())
+        #     )
+        # elif "elastic" in property_name:
+        #     return torch.from_numpy(
+        #         self._l_4_tensor_to_voigt(cart_property.cpu().numpy())
+        #     )
+        # else:
+        #     raise NotImplementedError("property_name not supported")
+        return full2voigt(self.l_max, cart_property)

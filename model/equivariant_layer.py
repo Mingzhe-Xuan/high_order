@@ -7,9 +7,15 @@ from typing import Union, Optional
 from e3nn.o3 import Irreps, Linear, spherical_harmonics
 from e3nn.nn import Gate, BatchNorm
 
-from .tensor_product import get_tp
-from .utils import add_irreps_tensor
-from .utils.add_irreps_tensor import selective_residual_add
+try:
+    from .tensor_product import get_tp
+    from .utils import add_irreps_tensor
+    from .utils.add_irreps_tensor import selective_residual_add
+except ImportError:
+    # For equivariance test
+    from tensor_product import get_tp
+    from utils import add_irreps_tensor
+    from utils.add_irreps_tensor import selective_residual_add
 
 
 class BaseEquivariantLayer(nn.Module):

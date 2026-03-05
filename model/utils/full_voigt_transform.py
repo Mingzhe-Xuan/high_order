@@ -145,7 +145,7 @@ def full2voigt(l_max: int, full_tensor: torch.Tensor) -> torch.Tensor:
         物理 Voigt 矩阵形式的张量，形状取决于 l_max:
         - l_max=0: [batch, 1]
         - l_max=1: [batch, 3]
-        - l_max=2: [batch, 6]
+        - l_max=2: [batch, 3, 3] # special case for l=2
         - l_max=3: [batch, 3, 6]
         - l_max=4: [batch, 6, 6]
         - l_max=5: [batch, 6, 18]
