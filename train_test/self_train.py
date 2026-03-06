@@ -75,6 +75,7 @@ def self_train(
         equivariant_layers,
         final_mlp,
         readout_layer,
+        self_train=True,
     )
     model = model.to(device)
 
