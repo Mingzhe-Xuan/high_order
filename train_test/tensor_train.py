@@ -54,12 +54,12 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
                 - torch.norm(tensor_property, dim=-1)
             )
             fnorm = torch.norm(tensor_property, dim=-1)
-            mean_fnorm_percent_error = (fnorm_error / fnorm).mean()
+            mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
             batchwise_rsse = (
                 (pred_tensor_property - tensor_property).view(-1).pow(2).sum().sqrt()
             )
             batchwise_sum_fnorm = tensor_property.view(-1).pow(2).sum().sqrt()
-            batchwise_percent_error = batchwise_rsse / batchwise_sum_fnorm
+            batchwise_percent_error = batchwise_rsse / (batchwise_sum_fnorm + 1e-8)
             
             val_loss += loss.item()
             val_mae_sum += pointwise_mae.item()
@@ -264,12 +264,12 @@ def tensor_train(
                 - torch.norm(tensor_property, dim=-1)
             )
             fnorm = torch.norm(tensor_property, dim=-1)
-            mean_fnorm_percent_error = (fnorm_error / fnorm).mean()
+            mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
             batchwise_rsse = (
                 (pred_tensor_property - tensor_property).view(-1).pow(2).sum().sqrt()
             )
             batchwise_sum_fnorm = tensor_property.view(-1).pow(2).sum().sqrt()
-            batchwise_percent_error = batchwise_rsse / batchwise_sum_fnorm
+            batchwise_percent_error = batchwise_rsse / (batchwise_sum_fnorm + 1e-8)
 
             epoch_loss += loss.item()
             epoch_mae_sum += pointwise_mae.item()
