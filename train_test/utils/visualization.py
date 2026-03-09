@@ -172,7 +172,6 @@ def plot_all_train_val_metrics(
         "mse": {"train_color": "purple", "val_color": "brown"},
         "pointwise_mae": {"train_color": "cyan", "val_color": "magenta"},
         "mean_fnorm_percent_error": {"train_color": "olive", "val_color": "teal"},
-        "batchwise_percent_error": {"train_color": "navy", "val_color": "maroon"},
     }
 
     for metric_name, config in metric_configs.items():
@@ -209,7 +208,6 @@ def plot_all_train_val_test_metrics(
         "mse": {"train_color": "purple", "val_color": "brown", "test_color": "cyan"},
         "pointwise_mae": {"train_color": "cyan", "val_color": "magenta", "test_color": "olive"},
         "mean_fnorm_percent_error": {"train_color": "olive", "val_color": "teal", "test_color": "navy"},
-        "batchwise_percent_error": {"train_color": "navy", "val_color": "maroon", "test_color": "purple"},
     }
 
     for metric_name, config in metric_configs.items():
