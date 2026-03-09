@@ -202,6 +202,11 @@ class ReadoutLayer(nn.Module):
         
         if irreps_key not in self._linear_layers:
             self._linear_layers[irreps_key] = Linear(irreps_out, self.cartesian_tensor)
+            self._linear_layers[irreps_key].to(global_feature.device)
+        else:
+            linear_layer = self._linear_layers[irreps_key]
+            if next(linear_layer.parameters()).device != global_feature.device:
+                self._linear_layers[irreps_key].to(global_feature.device)
         
         linear_out = self._linear_layers[irreps_key]
         global_feature = linear_out(global_feature)
