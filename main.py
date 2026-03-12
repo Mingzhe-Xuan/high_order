@@ -2,6 +2,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import warnings
+warnings.filterwarnings("ignore")
+
 import torch
 import torch.nn as nn
 import json
@@ -35,7 +38,9 @@ def _create_scalar_dataloaders(
     cutoff,
     train_val_test,
     seed,
-    batch_size,
+    train_batch_size,
+    val_batch_size,
+    test_batch_size,
     pin_memory,
     num_workers,
 ):
@@ -48,7 +53,9 @@ def _create_scalar_dataloaders(
             cutoff=cutoff,
             train_val_test=train_val_test,
             seed=seed,
-            batch_size=batch_size,
+            train_batch_size=train_batch_size,
+            val_batch_size=val_batch_size,
+            test_batch_size=test_batch_size,
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
@@ -65,7 +72,9 @@ def _create_tensor_dataloaders(
     cutoff,
     train_val_test,
     seed,
-    batch_size,
+    train_batch_size,
+    val_batch_size,
+    test_batch_size,
     pin_memory,
     num_workers,
 ):
@@ -78,7 +87,9 @@ def _create_tensor_dataloaders(
             cutoff=cutoff,
             train_val_test=train_val_test,
             seed=seed,
-            batch_size=batch_size,
+            train_batch_size=train_batch_size,
+            val_batch_size=val_batch_size,
+            test_batch_size=test_batch_size,
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
@@ -91,9 +102,11 @@ def _create_tensor_dataloaders(
 
 def main(
     cutoff: float = 5.0,
-    batch_size: int = 32,
+    train_batch_size: int = 32,
+    val_batch_size: int = 32,
+    test_batch_size: int = 32,
     pin_memory: bool = True,
-    num_workers: int = 0,
+    num_workers: int = 4,
     seed: int = 42,
     train_val_test: tuple[float, float, float] = (0.8, 0.1, 0.1),
     dist_emb_func: str = "gaussian",
@@ -104,7 +117,7 @@ def main(
     middle_scalar_hidden_dim: int = 128,
     num_middle_hidden_layers: int = 1,
     equi_update_method: str = "tpconv_with_edge",
-    num_equi_layers: int = 3,
+    num_equi_layers: int = 6,
     tp_method: str = "so2",
     scalar_dim: int = 16,
     vec_dim: int = 8,
@@ -117,7 +130,9 @@ def main(
     need_scalar_train: bool = True,
     need_tensor_train: bool = True,
     final_pooling: bool = False,
-    num_epochs: int = 100,
+    self_num_epochs: int = 100,
+    scalar_num_epochs: int = 400,
+    tensor_num_epochs: int = 200,
     lr: float = 1e-3,
     weight_decay: float = 1e-5,
     clip_grad_norm: float = 1.0,
@@ -135,9 +150,12 @@ def main(
     metric_dir: str = "metrics",
     start_epoch: int = 0,
 ):
+    print("Start running...")
     params_to_save = {
         "cutoff": cutoff,
-        "batch_size": batch_size,
+        "train_batch_size": train_batch_size,
+        "val_batch_size": val_batch_size,
+        "test_batch_size": test_batch_size,
         "pin_memory": pin_memory,
         "num_workers": num_workers,
         "seed": seed,
@@ -163,7 +181,9 @@ def main(
         "need_scalar_train": need_scalar_train,
         "need_tensor_train": need_tensor_train,
         "final_pooling": final_pooling,
-        "num_epochs": num_epochs,
+        "self_num_epochs": self_num_epochs,
+        "scalar_num_epochs": scalar_num_epochs,
+        "tensor_num_epochs": tensor_num_epochs,
         "lr": lr,
         "weight_decay": weight_decay,
         "clip_grad_norm": clip_grad_norm,
@@ -185,7 +205,7 @@ def main(
     if need_self_train:
         self_trainset = get_mp_dataloader(
             cutoff=cutoff,
-            batch_size=batch_size,
+            batch_size=train_batch_size,
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
@@ -199,7 +219,9 @@ def main(
             cutoff,
             train_val_test,
             seed,
-            batch_size,
+            train_batch_size,
+            val_batch_size,
+            test_batch_size,
             pin_memory,
             num_workers,
         )
@@ -212,7 +234,9 @@ def main(
             cutoff,
             train_val_test,
             seed,
-            batch_size,
+            train_batch_size,
+            val_batch_size,
+            test_batch_size,
             pin_memory,
             num_workers,
         )
@@ -254,7 +278,9 @@ def main(
         scalar_dataloaders=scalar_dataloaders,
         tensor_dataloaders=tensor_dataloaders,
         final_pooling=final_pooling,
-        num_epochs=num_epochs,
+        self_num_epochs=self_num_epochs,
+        scalar_num_epochs=scalar_num_epochs,
+        tensor_num_epochs=tensor_num_epochs,
         lr=lr,
         weight_decay=weight_decay,
         clip_grad_norm=clip_grad_norm,

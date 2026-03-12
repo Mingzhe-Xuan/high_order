@@ -49,6 +49,7 @@ def validate_model(model, val_loader, device, loss_fn):
     avg_val_loss = val_loss / num_batches
     avg_val_mae = val_mae / num_batches
     
+    model.train()
     return avg_val_loss, avg_val_mae
 
 

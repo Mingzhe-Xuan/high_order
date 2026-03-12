@@ -39,7 +39,7 @@ def calculate_metrics(y_true, y_pred):
     
     ss_res = torch.sum((y_true - y_pred) ** 2)
     ss_tot = torch.sum((y_true - torch.mean(y_true)) ** 2)
-    r2_score = 1 - (ss_res / ss_tot)
+    r2_score = 1 - (ss_res / (ss_tot + 1e-8))
     
     return {
         'mae': mae.item(),

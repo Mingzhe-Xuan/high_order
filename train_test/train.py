@@ -11,6 +11,8 @@ from src.model.utils import get_irreps_from_ns_nv_lmax
 from .self_train import self_train
 from .scalar_train import scalar_train
 from .tensor_train import tensor_train
+from .utils import analyze_model_components, save_num_params_markdown
+from .utils.checkpoint import get_checkpoint_dir
 from data import scalar_properties, tensor_properties, readout_configs
 from src.model import (
     EmbeddingLayer,
@@ -269,7 +271,9 @@ def train(
     # batch_size: int = 32,
     # num_workers: int = 0,
     # pin_memory: bool = True,
-    num_epochs: int = 100,
+    self_num_epochs: int = 100,
+    scalar_num_epochs: int = 400,
+    tensor_num_epochs: int = 200,
     lr: float = 1e-3,
     weight_decay: float = 1e-5,
     clip_grad_norm: float = 1.0,
@@ -393,6 +397,70 @@ def train(
         final_vec_out_dim,
     )
 
+    # Analyze and save model parameters before training
+    print("Analyzing model parameters...")
+    params_dict = {
+        "dist_emb_func": dist_emb_func,
+        "embed_dim": embed_dim,
+        "max_atom_type": max_atom_type,
+        "cutoff": cutoff,
+        "inv_update_method": inv_update_method,
+        "num_inv_layers": num_inv_layers,
+        "num_equi_layers": num_equi_layers,
+        "equi_update_method": equi_update_method,
+        "tp_method": tp_method,
+        "scalar_dim": scalar_dim,
+        "vec_dim": vec_dim,
+        "num_final_hidden_layers": num_final_hidden_layers,
+        "final_scalar_hidden_dim": final_scalar_hidden_dim,
+        "final_vec_hidden_dim": final_vec_hidden_dim,
+        "final_scalar_out_dim": final_scalar_out_dim,
+        "final_vec_out_dim": final_vec_out_dim,
+        "self_num_epochs": self_num_epochs,
+        "scalar_num_epochs": scalar_num_epochs,
+        "tensor_num_epochs": tensor_num_epochs,
+        "lr": lr,
+        "weight_decay": weight_decay,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+    }
+    
+    # Create a temporary middle_mlp and final_mlp for analysis
+    temp_middle_mlp = MiddleMLP(
+        scalar_dim_in=embed_dim,
+        scalar_dim_hidden=middle_scalar_hidden_dim,
+        scalar_dim_out=scalar_dim,
+        num_hidden_layers=num_middle_hidden_layers,
+    )
+    temp_final_mlp = FinalMLP(
+        irreps_in=Irreps(irreps_list[-1]),
+        irreps_hidden=final_irreps_hidden,
+        irreps_out=final_irreps_out,
+        num_hidden_layers=num_final_hidden_layers,
+    )
+    
+    # Analyze model components
+    model_summaries = analyze_model_components(
+        embedding_layer=embedding_layer,
+        invariant_layers=invariant_layers,
+        middle_mlp=temp_middle_mlp,
+        equivariant_layers=equivariant_layers,
+        final_mlp=temp_final_mlp,
+        readout_layer=None,
+    )
+    
+    # Save parameter summary to markdown file
+    checkpoint_dir_with_timestamp = get_checkpoint_dir(checkpoint_dir)
+    save_num_params_markdown(
+        model_summaries=model_summaries,
+        output_path=checkpoint_dir_with_timestamp,
+        params_dict=params_dict,
+    )
+    print(f"Model parameters summary saved to {checkpoint_dir_with_timestamp}")
+    
+    # Clean up temporary components
+    del temp_middle_mlp, temp_final_mlp
+
     # Self train
     scalar_train_history = {}
     tensor_train_history = {}
@@ -434,7 +502,7 @@ def train(
             final_mlp=self_final_mlp,
             readout_layer=self_readout_layer,
             dataloader=self_trainset,
-            num_epochs=num_epochs,
+            num_epochs=self_num_epochs,
             checkpoint_dir=checkpoint_dir,
             pic_dir=pic_dir,
             start_epoch=start_epoch,
@@ -482,7 +550,7 @@ def train(
                 readout_layer=scalar_models[prop].readout_layer,
                 scalar_trainset=scalar_dataloaders[f"{prop}_trainset"],
                 scalar_valset=scalar_dataloaders[f"{prop}_valset"],
-                num_epochs=num_epochs,
+                num_epochs=scalar_num_epochs,
                 checkpoint_dir=checkpoint_dir,
                 pic_dir=pic_dir,
                 start_epoch=start_epoch,
@@ -534,7 +602,7 @@ def train(
                 readout_layer=tensor_models[prop].readout_layer,
                 tensor_trainset=tensor_dataloaders[f"{prop}_trainset"],
                 tensor_valset=tensor_dataloaders[f"{prop}_valset"],
-                num_epochs=num_epochs,
+                num_epochs=tensor_num_epochs,
                 checkpoint_dir=checkpoint_dir,
                 pic_dir=pic_dir,
                 start_epoch=start_epoch,

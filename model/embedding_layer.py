@@ -10,6 +10,7 @@ class EmbedAtom(nn.Module):
         self.max_atom_type = max_atom_type
         # linear after onehot
         self.lin = nn.Linear(self.max_atom_type, self.embed_dim)
+        self.norm = nn.LayerNorm(self.embed_dim)
 
     def forward(self, atom_type: torch.Tensor) -> torch.Tensor:
         # atom_type: (num_nodes,)
@@ -19,6 +20,7 @@ class EmbedAtom(nn.Module):
         ).float()
         # embeded: (num_nodes, embed_dim)
         embeded = self.lin(onehot)
+        embeded = self.norm(embeded)
         return embeded
 
 
@@ -29,6 +31,7 @@ class EmbedDist(nn.Module):
         self.embed_dim = embed_dim
         self.cutoff = cutoff
         self.lin = nn.Linear(self.embed_dim, self.embed_dim)
+        self.norm = nn.LayerNorm(self.embed_dim)
 
     def gaussian_emb(
         self,
@@ -46,6 +49,7 @@ class EmbedDist(nn.Module):
         gaussian = torch.exp(-(((dist.unsqueeze(-1) - grid) / self.cutoff) ** 2))
         # embeded: (num_edges, embed_dim)
         embeded = self.lin(gaussian)
+        embeded = self.norm(embeded)
         return embeded
 
     def bessel_emb(self, dist: torch.Tensor):

@@ -6,6 +6,8 @@ from typing import Union
 from e3nn.o3 import Irreps, Linear
 from e3nn.nn import Gate, BatchNorm
 
+from .layer_norm import SeperableLayerNorm
+
 
 class FinalMLP(nn.Module):
     def __init__(
@@ -57,23 +59,23 @@ class FinalMLP(nn.Module):
         self.mlp.append(
             nn.Sequential(
                 Linear(self.irreps_in, self.gate_hidden.irreps_in),
-                BatchNorm(self.gate_hidden.irreps_in),
                 self.gate_hidden,
+                # SeperableLayerNorm(self.gate_hidden.irreps_out),
             )
         )
         for _ in range(num_hidden_layers):
             self.mlp.append(
                 nn.Sequential(
                     Linear(self.gate_hidden.irreps_out, self.gate_hidden.irreps_in),
-                    BatchNorm(self.gate_hidden.irreps_in),
                     self.gate_hidden,
+                    # SeperableLayerNorm(self.gate_hidden.irreps_out),
                 )
             )
         self.mlp.append(
             nn.Sequential(
                 Linear(self.gate_hidden.irreps_out, self.gate_out.irreps_in),
-                BatchNorm(self.gate_out.irreps_in),
                 self.gate_out,
+                SeperableLayerNorm(self.gate_out.irreps_out),
                 Linear(self.gate_out.irreps_out, self.irreps_out),
             )
         )

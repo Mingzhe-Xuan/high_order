@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 # from e3nn.o3 import Irreps, Linear
 from torch.nn import Linear
 
@@ -23,7 +24,8 @@ class MiddleMLP(nn.Module):
             self.middle_mlp.append(Linear(scalar_dim_hidden, scalar_dim_hidden))
         self.middle_mlp.append(Linear(scalar_dim_hidden, scalar_dim_out))
 
-    def forward(self, scalar_input: torch.Tensor) -> torch.Tensor:
+    def forward(self, scalar_feature: torch.Tensor) -> torch.Tensor:
         for layer in self.middle_mlp:
-            scalar_input = self.act(layer(scalar_input))
-        return scalar_input
+            scalar_feature = self.act(layer(scalar_feature))
+        scalar_feature = F.layer_norm(scalar_feature, scalar_feature.shape[1:])
+        return scalar_feature

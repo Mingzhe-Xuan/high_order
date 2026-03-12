@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from typing import Union, Optional
 
 from e3nn.o3 import Irreps, Linear, spherical_harmonics
-from e3nn.nn import Gate, BatchNorm
+from e3nn.nn import Gate
 
 try:
     from .tensor_product import get_tp
@@ -16,7 +16,7 @@ except ImportError:
     from tensor_product import get_tp
     from utils import add_irreps_tensor
     from utils.add_irreps_tensor import selective_residual_add
-
+from .layer_norm import SeperableLayerNorm
 
 class BaseEquivariantLayer(nn.Module):
     """Base class containing shared parameters and common functionality."""
@@ -292,6 +292,7 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
             self.tp = get_tp("fully_connected", self.irreps_in, self.irreps_out, self.irreps_out)
         else:
             self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
+        self.norm = SeperableLayerNorm(self.irreps_out)
 
     def tpconv_with_edge_update(
         self,
@@ -319,6 +320,7 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         aggregated_message = self.aggregate_messages(
             message, dst, num_nodes, atom_feature.device, atom_feature.dtype
         )
+        aggregated_message = self.norm(aggregated_message)
         if self.residual:
             # atom_feature = add_irreps_tensor(
             #     [self.irreps_in, self.irreps_out], [atom_feature, aggregated_message]

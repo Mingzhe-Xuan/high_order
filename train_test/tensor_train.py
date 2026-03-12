@@ -24,7 +24,7 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
     
     Returns:
         tuple: (avg_val_loss, avg_val_mae, avg_val_pointwise_mae, avg_val_mse, 
-                avg_val_fnorm_err, avg_val_batch_err)
+                avg_val_fnorm_err)
     """
     model.eval()
     val_loss = 0.0
@@ -32,7 +32,6 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
     val_pointwise_mae_sum = 0.0
     val_mse_sum = 0.0
     val_fnorm_err_sum = 0.0
-    val_batch_err_sum = 0.0
     num_batches = 0
     
     with torch.no_grad():
@@ -54,19 +53,13 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
                 - torch.norm(tensor_property, dim=-1)
             )
             fnorm = torch.norm(tensor_property, dim=-1)
-            mean_fnorm_percent_error = (fnorm_error / fnorm).mean()
-            batchwise_rsse = (
-                (pred_tensor_property - tensor_property).view(-1).pow(2).sum().sqrt()
-            )
-            batchwise_sum_fnorm = tensor_property.view(-1).pow(2).sum().sqrt()
-            batchwise_percent_error = batchwise_rsse / batchwise_sum_fnorm
+            mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
             
             val_loss += loss.item()
             val_mae_sum += pointwise_mae.item()
             val_pointwise_mae_sum += pointwise_mae.item()
             val_mse_sum += mse.item()
             val_fnorm_err_sum += mean_fnorm_percent_error.item()
-            val_batch_err_sum += batchwise_percent_error.item()
             num_batches += 1
 
     avg_val_loss = val_loss / num_batches
@@ -74,9 +67,9 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
     avg_val_pointwise_mae = val_pointwise_mae_sum / num_batches
     avg_val_mse = val_mse_sum / num_batches
     avg_val_fnorm_err = val_fnorm_err_sum / num_batches
-    avg_val_batch_err = val_batch_err_sum / num_batches
     
-    return avg_val_loss, avg_val_mae, avg_val_pointwise_mae, avg_val_mse, avg_val_fnorm_err, avg_val_batch_err
+    model.train()
+    return avg_val_loss, avg_val_mae, avg_val_pointwise_mae, avg_val_mse, avg_val_fnorm_err
 
 
 def tensor_train(
@@ -152,14 +145,12 @@ def tensor_train(
     train_pointwise_mae = []
     train_mse = []
     train_mean_fnorm_percent_error = []
-    train_batchwise_percent_error = []
 
     val_losses = []
     val_mae_scores = []
     val_pointwise_mae = []
     val_mse_scores = []
     val_mean_fnorm_percent_error = []
-    val_batchwise_percent_error = []
 
     scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
@@ -175,13 +166,11 @@ def tensor_train(
         train_pointwise_mae = checkpoint.get("train_pointwise_mae", [])
         train_mse = checkpoint.get("train_mse", [])
         train_mean_fnorm_percent_error = checkpoint.get("train_mean_fnorm_percent_error", [])
-        train_batchwise_percent_error = checkpoint.get("train_batchwise_percent_error", [])
         val_losses = checkpoint.get("val_losses", [])
         val_mae_scores = checkpoint.get("val_mae_scores", [])
         val_pointwise_mae = checkpoint.get("val_pointwise_mae", [])
         val_mse_scores = checkpoint.get("val_mse_scores", [])
         val_mean_fnorm_percent_error = checkpoint.get("val_mean_fnorm_percent_error", [])
-        val_batchwise_percent_error = checkpoint.get("val_batchwise_percent_error", [])
         if use_amp and device.type == "cuda" and scaler is not None and "scaler_state_dict" in checkpoint:
             scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
@@ -222,7 +211,6 @@ def tensor_train(
         epoch_pointwise_mae_sum = 0.0
         epoch_mse_sum = 0.0
         epoch_fnorm_err_sum = 0.0
-        epoch_batch_err_sum = 0.0
         num_batches = 0
 
         pbar = tqdm(batches, desc=f"Epoch {epoch+1}/{num_epochs}")
@@ -232,6 +220,25 @@ def tensor_train(
             edge_vec = batch.edge_vec.to(device)
             batch_index = batch.batch.to(device)
             tensor_property = batch.tensor_property.to(device)
+            # print("="*80)
+            # print("Atom type:")
+            # print(atom_type.shape)
+            # print("="*80)
+            # print("Edge index:")
+            # print(edge_index.shape)
+            # print("="*80)
+            # print("Edge vector:")
+            # print(edge_vec.shape)
+            # print("="*80)
+            # print("Batch index:")
+            # print(batch_index.shape)
+            # print("="*80)
+            # print("Tensor property:")
+            # print(tensor_property.shape)
+            # print("="*80)
+            # exit()
+
+
 
             optimizer.zero_grad()
             
@@ -264,27 +271,20 @@ def tensor_train(
                 - torch.norm(tensor_property, dim=-1)
             )
             fnorm = torch.norm(tensor_property, dim=-1)
-            mean_fnorm_percent_error = (fnorm_error / fnorm).mean()
-            batchwise_rsse = (
-                (pred_tensor_property - tensor_property).view(-1).pow(2).sum().sqrt()
-            )
-            batchwise_sum_fnorm = tensor_property.view(-1).pow(2).sum().sqrt()
-            batchwise_percent_error = batchwise_rsse / batchwise_sum_fnorm
+            mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
 
             epoch_loss += loss.item()
             epoch_mae_sum += pointwise_mae.item()
             epoch_pointwise_mae_sum += pointwise_mae.item()
             epoch_mse_sum += mse.item()
             epoch_fnorm_err_sum += mean_fnorm_percent_error.item()
-            epoch_batch_err_sum += batchwise_percent_error.item()
             num_batches += 1
 
             pbar.set_postfix({
                 "loss": f"{loss.item():.6f}", 
                 "mae": f"{pointwise_mae.item():.6f}",
                 "mse": f"{mse.item():.6f}",
-                "fnorm_err%": f"{mean_fnorm_percent_error.item():.6f}",
-                "batch_err%": f"{batchwise_percent_error.item():.6f}"
+                "fnorm_err%": f"{mean_fnorm_percent_error.item():.6f}"
             })
 
         avg_loss = epoch_loss / num_batches
@@ -292,16 +292,14 @@ def tensor_train(
         avg_pointwise_mae = epoch_pointwise_mae_sum / num_batches
         avg_mse = epoch_mse_sum / num_batches
         avg_fnorm_err = epoch_fnorm_err_sum / num_batches
-        avg_batch_err = epoch_batch_err_sum / num_batches
         
         train_losses.append(avg_loss)
         train_mae.append(avg_mae)
         train_pointwise_mae.append(avg_pointwise_mae)
         train_mse.append(avg_mse)
         train_mean_fnorm_percent_error.append(avg_fnorm_err)
-        train_batchwise_percent_error.append(avg_batch_err)
         
-        val_loss, val_avg_mae, val_p_mae, val_mse, val_fnorm_err, val_batch_err = validate_tensor_model(
+        val_loss, val_avg_mae, val_p_mae, val_mse, val_fnorm_err = validate_tensor_model(
             model, tensor_valset, device, loss_fn
         )
         val_losses.append(val_loss)
@@ -309,7 +307,6 @@ def tensor_train(
         val_pointwise_mae.append(val_p_mae)
         val_mse_scores.append(val_mse)
         val_mean_fnorm_percent_error.append(val_fnorm_err)
-        val_batchwise_percent_error.append(val_batch_err)
         
         scheduler.step()
 
@@ -318,8 +315,7 @@ def tensor_train(
             f"Train Pointwise MAE: {train_pointwise_mae[-1]:.6f}, Train MSE: {train_mse[-1]:.6f}, "
             f"Val Loss: {val_loss:.6f}, Val MAE: {val_avg_mae:.6f}, "
             f"Val Pointwise MAE: {val_p_mae:.6f}, Val MSE: {val_mse:.6f}, "
-            f"Val Mean FNORM % Error: {val_fnorm_err:.6f}, "
-            f"Val Batchwise % Error: {val_batch_err:.6f}"
+            f"Val Mean FNORM % Error: {val_fnorm_err:.6f}"
         )
 
         checkpoint_data = {
@@ -333,20 +329,15 @@ def tensor_train(
             "val_pointwise_mae": val_p_mae,
             "val_mse": val_mse,
             "val_mean_fnorm_percent_error": val_fnorm_err,
-            "val_batchwise_percent_error": val_batch_err,
             "best_loss": best_loss,
             "train_losses": train_losses,
             "train_mae": train_mae,
             "train_pointwise_mae": train_pointwise_mae,
             "train_mse": train_mse,
             "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
-            "train_batchwise_percent_error": train_batchwise_percent_error,
             "val_losses": val_losses,
             "val_mae_scores": val_mae_scores,
-            "val_pointwise_mae": val_pointwise_mae,
             "val_mse_scores": val_mse_scores,
-            "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
-            "val_batchwise_percent_error": val_batchwise_percent_error,
         }
         if use_amp and device.type == "cuda" and scaler is not None:
             checkpoint_data["scaler_state_dict"] = scaler.state_dict()
@@ -383,7 +374,6 @@ def tensor_train(
         "train_pointwise_mae": train_pointwise_mae,
         "train_mse": train_mse,
         "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
-        "train_batchwise_percent_error": train_batchwise_percent_error,
     }
     
     val_metrics = {
@@ -392,7 +382,6 @@ def tensor_train(
         "val_pointwise_mae": val_pointwise_mae,
         "val_mse": val_mse_scores,
         "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
-        "val_batchwise_percent_error": val_batchwise_percent_error,
     }
     
     plot_all_train_val_metrics(
@@ -408,13 +397,11 @@ def tensor_train(
         "train_pointwise_mae": train_pointwise_mae,
         "train_mse": train_mse,
         "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
-        "train_batchwise_percent_error": train_batchwise_percent_error,
         "val_losses": val_losses,
         "val_mae_scores": val_mae_scores,
         "val_pointwise_mae": val_pointwise_mae,
         "val_mse_scores": val_mse_scores,
         "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
-        "val_batchwise_percent_error": val_batchwise_percent_error,
     }
     
     return model, training_history

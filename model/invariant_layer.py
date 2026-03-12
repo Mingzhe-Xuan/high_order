@@ -13,8 +13,8 @@ class BiasGATLayer(nn.Module):
         self.k_lin = nn.Linear(scalar_dim, scalar_dim)
         self.v_lin = nn.Linear(scalar_dim, scalar_dim)
         self.e_lin = nn.Linear(scalar_dim, scalar_dim)
-        self.alpha_bn = nn.BatchNorm1d(scalar_dim)
-        self.message_bn = nn.BatchNorm1d(scalar_dim)
+        self.alpha_norm = nn.LayerNorm(scalar_dim)
+        self.message_norm = nn.LayerNorm(scalar_dim)
         self.act = nn.Softplus()
         self.k_mlp = nn.Sequential(
             nn.Linear(scalar_dim * 3, scalar_dim),
@@ -76,6 +76,7 @@ class BiasGATLayer(nn.Module):
         return self.bias_gat_update(atom_feature, edge_feature, edge_index)
 
 
+# Revised from comformer, batchnorm -> layernorm to adapt variable num_atoms
 class ComformerLayer(nn.Module):
     """Implementation of the ComFormer update mechanism."""
     def __init__(self, scalar_dim: int):
@@ -85,8 +86,8 @@ class ComformerLayer(nn.Module):
         self.k_lin = nn.Linear(scalar_dim, scalar_dim)
         self.v_lin = nn.Linear(scalar_dim, scalar_dim)
         self.e_lin = nn.Linear(scalar_dim, scalar_dim)
-        self.alpha_bn = nn.BatchNorm1d(scalar_dim)
-        self.message_bn = nn.BatchNorm1d(scalar_dim)
+        self.alpha_norm = nn.LayerNorm(scalar_dim)
+        self.message_norm = nn.LayerNorm(scalar_dim)
         self.act = nn.Softplus()
         self.k_mlp = nn.Sequential(
             nn.Linear(scalar_dim * 3, scalar_dim),
@@ -132,9 +133,9 @@ class ComformerLayer(nn.Module):
         v = self.v_mlp(_v)
         # alpha: (num_edges, scalar_dim)
         scale = torch.tensor(self.scalar_dim, dtype=q.dtype)
-        alpha = self.alpha_bn(q * k / torch.sqrt(scale))
+        alpha = self.alpha_norm(q * k / torch.sqrt(scale))
         # message: (num_edges, scalar_dim)
-        message = self.message_bn(self.gate(alpha) * v)
+        message = self.message_norm(self.gate(alpha) * v)
         return message
 
     def comformer_update(
