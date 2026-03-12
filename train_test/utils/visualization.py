@@ -122,6 +122,7 @@ def plot_prediction_scatter(
     property_name: str,
     title: Optional[str] = None,
     filename: Optional[str] = None,
+    color_by_component: bool = False,
 ) -> str:
     if title is None:
         title = f"{property_name} - Prediction vs True Values"
@@ -136,18 +137,91 @@ def plot_prediction_scatter(
     if torch.is_tensor(y_pred):
         y_pred = y_pred.cpu().numpy()
 
-    y_true_flat = y_true.flatten()
-    y_pred_flat = y_pred.flatten()
-
     plt.figure(figsize=(10, 8))
-    plt.scatter(y_true_flat, y_pred_flat, alpha=0.6, s=20)
 
-    min_val = min(y_true_flat.min(), y_pred_flat.min())
-    max_val = max(y_true_flat.max(), y_pred_flat.max())
+    if color_by_component and len(y_true.shape) >= 2:
+        num_structures = y_true.shape[0]
+        tensor_shape = y_true.shape[1:]
+        num_components = np.prod(tensor_shape)
+
+        if num_components <= 20:
+            colors = plt.cm.tab20(np.linspace(0, 1, num_components))
+        elif num_components <= 40:
+            colors = plt.cm.tab20b(np.linspace(0, 1, num_components))
+        elif num_components <= 60:
+            colors = plt.cm.tab20c(np.linspace(0, 1, num_components))
+        else:
+            colors = plt.cm.hsv(np.linspace(0, 1, num_components))
+        
+        component_labels = []
+
+        for idx in np.ndindex(tensor_shape):
+            comp_idx = np.ravel_multi_index(idx, tensor_shape)
+            true_vals = y_true[:, idx]
+            pred_vals = y_pred[:, idx]
+            label = f"Component {idx}"
+            plt.scatter(true_vals, pred_vals, alpha=0.6, s=20, 
+                       color=colors[comp_idx], label=label)
+            component_labels.append(label)
+
+        plt.legend(fontsize=8, ncol=2, loc='upper left')
+    else:
+        y_true_flat = y_true.flatten()
+        y_pred_flat = y_pred.flatten()
+        plt.scatter(y_true_flat, y_pred_flat, alpha=0.6, s=20)
+
+    min_val = np.min(y_true)
+    max_val = np.max(y_true)
     plt.plot([min_val, max_val], [min_val, max_val], "r--", lw=2, label="Perfect Prediction")
 
     plt.xlabel("True Values", fontsize=12)
     plt.ylabel("Predicted Values", fontsize=12)
+    plt.title(title, fontsize=14)
+    if not color_by_component:
+        plt.legend(fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    return save_path
+
+
+def plot_fnorm_scatter(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    save_dir: str,
+    property_name: str,
+    title: Optional[str] = None,
+    filename: Optional[str] = None,
+) -> str:
+    if title is None:
+        title = f"{property_name} - Frobenius Norm: Prediction vs True Values"
+    if filename is None:
+        filename = f"{property_name}_fnorm_scatter.png"
+
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, filename)
+
+    if torch.is_tensor(y_true):
+        y_true = y_true.cpu().numpy()
+    if torch.is_tensor(y_pred):
+        y_pred = y_pred.cpu().numpy()
+
+    property_dim = tuple(range(1, y_true.dim() if torch.is_tensor(y_true) else len(y_true.shape)))
+    
+    true_fnorm = np.linalg.norm(y_true, axis=property_dim)
+    pred_fnorm = np.linalg.norm(y_pred, axis=property_dim)
+
+    plt.figure(figsize=(10, 8))
+    plt.scatter(true_fnorm, pred_fnorm, alpha=0.6, s=20, color='blue')
+
+    min_val = min(true_fnorm.min(), pred_fnorm.min())
+    max_val = max(true_fnorm.max(), pred_fnorm.max())
+    plt.plot([min_val, max_val], [min_val, max_val], "r--", lw=2, label="Perfect Prediction")
+
+    plt.xlabel("True Frobenius Norm", fontsize=12)
+    plt.ylabel("Predicted Frobenius Norm", fontsize=12)
     plt.title(title, fontsize=14)
     plt.legend(fontsize=10)
     plt.grid(True, alpha=0.3)

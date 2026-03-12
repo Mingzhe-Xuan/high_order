@@ -11,6 +11,7 @@ from src.train_test.utils.visualization import (
     get_visualization_dir,
     plot_all_train_val_test_metrics,
     plot_prediction_scatter,
+    plot_fnorm_scatter,
 )
 
 
@@ -181,6 +182,16 @@ def tensor_test(
                 property_name=prop,
                 title=f"{prop} - Test: Prediction vs True Values",
                 filename=f"{prop}_test_prediction_scatter.png",
+                color_by_component=True,
+            )
+
+            plot_fnorm_scatter(
+                y_true=all_true_values,
+                y_pred=all_pred_values,
+                save_dir=property_vis_dir,
+                property_name=prop,
+                title=f"{prop} - Test: Frobenius Norm: Prediction vs True Values",
+                filename=f"{prop}_test_fnorm_scatter.png",
             )
 
             if train_history is not None and prop in train_history:
