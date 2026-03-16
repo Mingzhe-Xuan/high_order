@@ -76,7 +76,7 @@ def scalar_train(
     scheduler: str = "cosine_annealing",
     loss_func: str = "huber",
     limit: int = None,
-    use_amp: bool = False,
+    use_amp: bool = True,
 ):
     """
     Train a scalar property prediction model with validation.
@@ -129,8 +129,17 @@ def scalar_train(
 
     scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
+    optimizer = None
+    scheduler = None
+
     if resume_from and os.path.exists(resume_from):
         checkpoint = load_checkpoint(resume_from, device)
+        
+        required_keys = ["model_state_dict", "optimizer_state_dict", "scheduler_state_dict", "epoch", "best_loss"]
+        missing_keys = [key for key in required_keys if key not in checkpoint]
+        if missing_keys:
+            raise ValueError(f"Checkpoint is missing required keys: {missing_keys}")
+        
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
@@ -140,9 +149,35 @@ def scalar_train(
         train_mae = checkpoint["train_mae"]
         val_losses = checkpoint.get("val_losses", [])
         val_mae_scores = checkpoint.get("val_mae_scores", [])
-        if use_amp and device.type == "cuda" and scaler is not None and "scaler_state_dict" in checkpoint:
-            scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        
+        checkpoint_use_amp = checkpoint.get("use_amp", True)
+        if checkpoint_use_amp and "scaler_state_dict" in checkpoint:
+            if use_amp and device.type == "cuda" and scaler is not None:
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
+            elif not use_amp:
+                print("Warning: Checkpoint was saved with AMP, but use_amp=False. Scaler state will not be loaded.")
+        elif not checkpoint_use_amp and use_amp:
+            print("Warning: Checkpoint was saved without AMP, but use_amp=True. Starting with fresh scaler.")
+        
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
+
+    if optimizer is None:
+        if optimizer == "adamw":
+            optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        elif optimizer == "adam":
+            optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        elif optimizer == "sgd":
+            optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        else:
+            raise NotImplementedError(f"optimizer {optimizer} is not implemented")
+
+    if scheduler is None:
+        if scheduler == "cosine_annealing":
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+        elif scheduler == "step":
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        else:
+            raise NotImplementedError(f"scheduler {scheduler} is not implemented")
 
     batches = scalar_trainset
 
@@ -154,22 +189,6 @@ def scalar_train(
         loss_fn = nn.L1Loss()
     else:
         raise NotImplementedError(f"loss_func {loss_func} is not implemented")
-
-    if optimizer == "adamw":
-        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    elif optimizer == "adam":
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    elif optimizer == "sgd":
-        optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    else:
-        raise NotImplementedError(f"optimizer {optimizer} is not implemented")
-
-    if scheduler == "cosine_annealing":
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-    elif scheduler == "step":
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-    else:
-        raise NotImplementedError(f"scheduler {scheduler} is not implemented")
 
     if limit is None:
         limit = num_epochs
@@ -229,7 +248,7 @@ def scalar_train(
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {avg_loss:.6f}, Train MAE: {avg_mae:.6f}, Val Loss: {val_loss:.6f}, Val MAE: {val_mae:.6f}")
 
         checkpoint_data = {
-            "epoch": epoch,
+            "epoch": epoch + 1,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
@@ -244,6 +263,7 @@ def scalar_train(
         }
         if use_amp and device.type == "cuda" and scaler is not None:
             checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+        checkpoint_data["use_amp"] = use_amp
 
         if val_loss < best_loss:
             best_loss = val_loss

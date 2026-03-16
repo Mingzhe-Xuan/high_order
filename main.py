@@ -149,6 +149,9 @@ def main(
     pic_dir: str = "pics",
     metric_dir: str = "metrics",
     start_epoch: int = 0,
+    resume_self_train: str = None,
+    resume_scalar_train: str = None,
+    resume_tensor_train: str = None,
 ):
     print("Start running...")
     params_to_save = {
@@ -296,6 +299,9 @@ def main(
         checkpoint_dir=checkpoint_dir,
         pic_dir=pic_dir,
         start_epoch=start_epoch,
+        resume_self_train=resume_self_train,
+        resume_scalar_train=resume_scalar_train,
+        resume_tensor_train=resume_tensor_train,
     )
 
     print("Start testing...")

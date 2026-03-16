@@ -16,6 +16,7 @@ from src.train_test.utils.checkpoint import (
     save_checkpoint,
     load_checkpoint,
 )
+from e3nn.o3 import Irreps, Linear
 
 
 def validate_tensor_model(model, val_loader, device, loss_fn):
@@ -95,7 +96,7 @@ def tensor_train(
     scheduler: str = "cosine_annealing",
     loss_func: str = "huber",
     limit: int = None,
-    use_amp: bool = False,
+    use_amp: bool = True,
 ):
     """
     Train a tensor property prediction model with validation.
@@ -154,11 +155,23 @@ def tensor_train(
 
     scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
+    optimizer_name = optimizer
+    scheduler_name = scheduler
+    optimizer = None
+    scheduler = None
+
     if resume_from and os.path.exists(resume_from):
         checkpoint = load_checkpoint(resume_from, device)
+        
+        required_keys = ["model_state_dict", "optimizer_state_dict", "scheduler_state_dict", "epoch", "best_loss"]
+        missing_keys = [key for key in required_keys if key not in checkpoint]
+        if missing_keys:
+            raise ValueError(f"Checkpoint is missing required keys: {missing_keys}")
+
         model.load_state_dict(checkpoint["model_state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        # Store checkpoint state dicts to load after optimizer/scheduler creation
+        optimizer_checkpoint = checkpoint["optimizer_state_dict"]
+        scheduler_checkpoint = checkpoint["scheduler_state_dict"]
         start_epoch = checkpoint["epoch"] + 1
         best_loss = checkpoint["best_loss"]
         train_losses = checkpoint["train_losses"]
@@ -171,9 +184,46 @@ def tensor_train(
         val_pointwise_mae = checkpoint.get("val_pointwise_mae", [])
         val_mse_scores = checkpoint.get("val_mse_scores", [])
         val_mean_fnorm_percent_error = checkpoint.get("val_mean_fnorm_percent_error", [])
-        if use_amp and device.type == "cuda" and scaler is not None and "scaler_state_dict" in checkpoint:
-            scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        
+        checkpoint_use_amp = checkpoint.get("use_amp", True)
+        if checkpoint_use_amp and "scaler_state_dict" in checkpoint:
+            if use_amp and device.type == "cuda" and scaler is not None:
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
+            elif not use_amp:
+                print("Warning: Checkpoint was saved with AMP, but use_amp=False. Scaler state will not be loaded.")
+        elif not checkpoint_use_amp and use_amp:
+            print("Warning: Checkpoint was saved without AMP, but use_amp=True. Starting with fresh scaler.")
+        
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
+
+    if optimizer is None:
+        if optimizer_name == "adamw":
+            optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        elif optimizer_name == "adam":
+            optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        elif optimizer_name == "sgd":
+            optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        else:
+            raise NotImplementedError(f"optimizer {optimizer_name} is not implemented")
+
+    if scheduler is None:
+        if scheduler_name == "cosine_annealing":
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+        elif scheduler_name == "step":
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        else:
+            raise NotImplementedError(f"scheduler {scheduler_name} is not implemented")
+
+    # Load optimizer and scheduler state dicts if resuming
+    if resume_from and os.path.exists(resume_from):
+        try:
+            optimizer.load_state_dict(optimizer_checkpoint)
+        except ValueError as e:
+            print(f"Warning: Could not load optimizer state dict: {e}. Starting with fresh optimizer.")
+        try:
+            scheduler.load_state_dict(scheduler_checkpoint)
+        except ValueError as e:
+            print(f"Warning: Could not load scheduler state dict: {e}. Starting with fresh scheduler.")
 
     batches = tensor_trainset
 
@@ -185,22 +235,6 @@ def tensor_train(
         loss_fn = nn.L1Loss()
     else:
         raise NotImplementedError(f"loss_func {loss_func} is not implemented")
-
-    if optimizer == "adamw":
-        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    elif optimizer == "adam":
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    elif optimizer == "sgd":
-        optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    else:
-        raise NotImplementedError(f"optimizer {optimizer} is not implemented")
-
-    if scheduler == "cosine_annealing":
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
-    elif scheduler == "step":
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-    else:
-        raise NotImplementedError(f"scheduler {scheduler} is not implemented")
 
     if limit is None:
         limit = num_epochs
@@ -319,14 +353,14 @@ def tensor_train(
         )
 
         checkpoint_data = {
-            "epoch": epoch,
+            "epoch": epoch + 1,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
             "train_loss": avg_loss,
             "val_loss": val_loss,
             "val_mae": val_avg_mae,
-            "val_pointwise_mae": val_p_mae,
+            "val_pointwise_mae": val_pointwise_mae,
             "val_mse": val_mse,
             "val_mean_fnorm_percent_error": val_fnorm_err,
             "best_loss": best_loss,
@@ -338,9 +372,11 @@ def tensor_train(
             "val_losses": val_losses,
             "val_mae_scores": val_mae_scores,
             "val_mse_scores": val_mse_scores,
+            "val_mean_fnorm_percent_error": val_mean_fnorm_percent_error,
         }
         if use_amp and device.type == "cuda" and scaler is not None:
             checkpoint_data["scaler_state_dict"] = scaler.state_dict()
+        checkpoint_data["use_amp"] = use_amp
 
         if val_loss < best_loss:
             best_loss = val_loss
