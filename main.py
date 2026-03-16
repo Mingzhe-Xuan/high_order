@@ -200,7 +200,8 @@ def main(
 ):
     print("Start running...")
     
-    seed_everything(seed)
+    # Note: Random seed is already set in main.py (entry point)
+    # to ensure reproducibility from the very beginning of the program.
     
     params_to_save = {
         "cutoff": cutoff,
