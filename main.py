@@ -9,10 +9,51 @@ import torch
 import torch.nn as nn
 import json
 import os
+import numpy as np
+import random
 from typing import Union
 from e3nn.o3 import Irreps
 from torch_geometric.loader import DataLoader
 import argparse
+
+
+def seed_everything(seed: int):
+    """
+    Set random seed for reproducibility across all libraries.
+    
+    Args:
+        seed: Random seed value
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    
+    print(f"Random seed set to {seed} for full reproducibility")
+
+def worker_init_fn(worker_id: int, seed: int):
+    """
+    Initialize worker process with specific seed for reproducibility.
+    
+    Args:
+        worker_id: Worker ID
+        seed: Base seed value
+    """
+    worker_seed = seed + worker_id
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(worker_seed)
+        torch.cuda.manual_seed_all(worker_seed)
 
 
 from data import (
@@ -43,6 +84,7 @@ def _create_scalar_dataloaders(
     test_batch_size,
     pin_memory,
     num_workers,
+    worker_init_fn=None,
 ):
     """Create dataloaders for scalar properties."""
     dataloaders = {}
@@ -59,6 +101,7 @@ def _create_scalar_dataloaders(
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
+            worker_init_fn=worker_init_fn,
         )
         dataloaders[f"{prop}_trainset"] = trainset
         dataloaders[f"{prop}_valset"] = valset
@@ -77,6 +120,7 @@ def _create_tensor_dataloaders(
     test_batch_size,
     pin_memory,
     num_workers,
+    worker_init_fn=None,
 ):
     """Create dataloaders for tensor properties."""
     dataloaders = {}
@@ -93,6 +137,7 @@ def _create_tensor_dataloaders(
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
+            worker_init_fn=worker_init_fn,
         )
         dataloaders[f"{prop}_trainset"] = trainset
         dataloaders[f"{prop}_valset"] = valset
@@ -154,6 +199,9 @@ def main(
     resume_tensor_train: str = None,
 ):
     print("Start running...")
+    
+    seed_everything(seed)
+    
     params_to_save = {
         "cutoff": cutoff,
         "train_batch_size": train_batch_size,
@@ -212,6 +260,7 @@ def main(
             pin_memory=pin_memory,
             num_workers=num_workers,
             shuffle=True,
+            worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
         )
     else:
         self_trainset = None
@@ -227,6 +276,7 @@ def main(
             test_batch_size,
             pin_memory,
             num_workers,
+            worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
         )
     else:
         scalar_dataloaders = None
@@ -242,6 +292,7 @@ def main(
             test_batch_size,
             pin_memory,
             num_workers,
+            worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
         )
     else:
         tensor_dataloaders = None

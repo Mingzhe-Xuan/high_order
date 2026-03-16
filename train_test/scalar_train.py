@@ -129,8 +129,8 @@ def scalar_train(
 
     scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
-    optimizer = None
-    scheduler = None
+    opt = None
+    sched = None
 
     if resume_from and os.path.exists(resume_from):
         checkpoint = load_checkpoint(resume_from, device)
@@ -141,8 +141,8 @@ def scalar_train(
             raise ValueError(f"Checkpoint is missing required keys: {missing_keys}")
         
         model.load_state_dict(checkpoint["model_state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        opt.load_state_dict(checkpoint["optimizer_state_dict"])
+        sched.load_state_dict(checkpoint["scheduler_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
         best_loss = checkpoint["best_loss"]
         train_losses = checkpoint["train_losses"]
@@ -161,21 +161,21 @@ def scalar_train(
         
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
-    if optimizer is None:
+    if opt is None:
         if optimizer == "adamw":
-            optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+            opt = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         elif optimizer == "adam":
-            optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+            opt = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         elif optimizer == "sgd":
-            optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+            opt = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         else:
             raise NotImplementedError(f"optimizer {optimizer} is not implemented")
 
-    if scheduler is None:
+    if sched is None:
         if scheduler == "cosine_annealing":
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+            sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
         elif scheduler == "step":
-            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+            sched = optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)
         else:
             raise NotImplementedError(f"scheduler {scheduler} is not implemented")
 
@@ -206,7 +206,7 @@ def scalar_train(
             batch_index = batch.batch.to(device)
             scalar_property = batch.scalar_property.to(device)
 
-            optimizer.zero_grad()
+            opt.zero_grad()
             
             if use_amp and device.type == "cuda":
                 with torch.cuda.amp.autocast():
@@ -214,9 +214,9 @@ def scalar_train(
                     loss = loss_fn(pred_scalar_property, scalar_property)
                 
                 scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
+                scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-                scaler.step(optimizer)
+                scaler.step(opt)
                 scaler.update()
             else:
                 pred_scalar_property = model(atom_type, edge_vec, edge_index, batch_index)
@@ -224,7 +224,7 @@ def scalar_train(
                 loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-                optimizer.step()
+                opt.step()
             
             mae = (pred_scalar_property - scalar_property).abs().mean()
 
@@ -243,15 +243,15 @@ def scalar_train(
         val_losses.append(val_loss)
         val_mae_scores.append(val_mae)
         
-        scheduler.step()
+        sched.step()
 
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {avg_loss:.6f}, Train MAE: {avg_mae:.6f}, Val Loss: {val_loss:.6f}, Val MAE: {val_mae:.6f}")
 
         checkpoint_data = {
             "epoch": epoch + 1,
             "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict(),
+            "optimizer_state_dict": opt.state_dict(),
+            "scheduler_state_dict": sched.state_dict(),
             "train_loss": avg_loss,
             "val_loss": val_loss,
             "val_mae": val_mae,
