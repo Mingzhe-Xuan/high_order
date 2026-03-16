@@ -12,13 +12,15 @@ try:
     from .utils import add_irreps_tensor
     from .utils.add_irreps_tensor import selective_residual_add
     from .final_mlp import FinalMLP
+    from .layer_norm import SeperableLayerNorm
 except ImportError:
     # For equivariance test
     from tensor_product import get_tp
     from utils import add_irreps_tensor
     from utils.add_irreps_tensor import selective_residual_add
     from final_mlp import FinalMLP
-from .layer_norm import SeperableLayerNorm
+    from layer_norm import SeperableLayerNorm
+
 
 class BaseEquivariantLayer(nn.Module):
     """Base class containing shared parameters and common functionality."""

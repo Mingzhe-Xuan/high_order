@@ -26,7 +26,7 @@ class ReadoutLayer(nn.Module):
         super().__init__()
         self.l_max = l_max
         self.symmetry = symmetry
-        self.irreps_out = irreps_out
+        self.irreps_out = Irreps(irreps_out)
 
         # 根据l_max自动选择合适的CartesianTensor formula
         if l_max > 0:
@@ -126,8 +126,8 @@ class ReadoutLayer(nn.Module):
         # property_name: Union[str, None] = None,
         # linear_adaption: bool = False, -- Deprecated --
     ) -> torch.Tensor:
-        if isinstance(irreps_out, str):
-            irreps_out = Irreps(irreps_out)
+        # if isinstance(self.irreps_out, str):
+        #     self.irreps_out = Irreps(self.irreps_out)
 
         if self.l_max > _l_max:
             raise ValueError(

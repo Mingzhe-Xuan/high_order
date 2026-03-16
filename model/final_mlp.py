@@ -6,7 +6,10 @@ from typing import Union
 from e3nn.o3 import Irreps, Linear
 from e3nn.nn import Gate, BatchNorm
 
-from .layer_norm import SeperableLayerNorm
+try:
+    from .layer_norm import SeperableLayerNorm
+except ImportError:
+    from layer_norm import SeperableLayerNorm
 
 
 class FinalMLP(nn.Module):

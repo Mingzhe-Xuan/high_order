@@ -47,9 +47,9 @@ def test_readout_layer():
     rot_mat = rand_matrix()
     D_in = irreps_in.D_from_matrix(rot_mat)
 
-    layer = ReadoutLayer(l_max, symmetry=formula)
-    property_out = layer(global_feature, irreps_in)
-    property_out_after_rot = layer(global_feature @ D_in, irreps_in)
+    layer = ReadoutLayer(l_max, symmetry=formula, irreps_out=irreps_in)
+    property_out = layer(global_feature)
+    property_out_after_rot = layer(global_feature @ D_in)
 
     assert torch.allclose(rot_mat.T @ property_out @ rot_mat, property_out_after_rot, atol=1e-4)
 
