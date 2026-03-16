@@ -117,7 +117,7 @@ def main(
     middle_scalar_hidden_dim: int = 128,
     num_middle_hidden_layers: int = 1,
     equi_update_method: str = "tpconv_with_edge",
-    num_equi_layers: int = 6,
+    num_equi_layers: int = 4,
     tp_method: str = "so2",
     scalar_dim: int = 16,
     vec_dim: int = 8,

@@ -444,6 +444,14 @@ def train(
         num_hidden_layers=num_final_hidden_layers,
     )
     
+    # Move model components to GPU before analysis
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    embedding_layer = embedding_layer.to(device)
+    invariant_layers = invariant_layers.to(device)
+    equivariant_layers = equivariant_layers.to(device)
+    temp_middle_mlp = temp_middle_mlp.to(device)
+    temp_final_mlp = temp_final_mlp.to(device)
+    
     # Analyze model components
     model_summaries = analyze_model_components(
         embedding_layer=embedding_layer,
