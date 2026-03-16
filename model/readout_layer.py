@@ -22,10 +22,11 @@ class ReadoutViaGradLayer(nn.Module):
         pass
 
 class ReadoutLayer(nn.Module):
-    def __init__(self, l_max: int, symmetry: str = None):
+    def __init__(self, l_max: int, symmetry: str = None, irreps_out: Irreps = None):
         super().__init__()
         self.l_max = l_max
         self.symmetry = symmetry
+        self.irreps_out = irreps_out
 
         # 根据l_max自动选择合适的CartesianTensor formula
         if l_max > 0:
@@ -49,10 +50,9 @@ class ReadoutLayer(nn.Module):
         else:
             # CartesianTensor cannot handle l=0 with an empty formula
             self.cartesian_tensor = Irreps("0e")
+
+        self.linear_out = Linear(irreps_out, self.cartesian_tensor)
         
-        # 用于缓存 Linear 层的字典
-        # 使用 nn.ModuleDict 来确保这些层被 PyTorch 的参数管理系统追踪
-        self._linear_layers = nn.ModuleDict()
 
     # def _l_3_tensor_to_voigt(self, d_ijk):
     #     """
@@ -122,7 +122,7 @@ class ReadoutLayer(nn.Module):
     def forward(
         self,
         global_feature: torch.Tensor,
-        irreps_out: Union[str, Irreps],
+        # irreps_out: Union[str, Irreps],
         # property_name: Union[str, None] = None,
         # linear_adaption: bool = False, -- Deprecated --
     ) -> torch.Tensor:
@@ -197,19 +197,22 @@ class ReadoutLayer(nn.Module):
         #         linear_out = Linear(irreps_out, self.cartesian_tensor)
         #         global_feature = linear_out(global_feature)
 
-        # 创建或获取 Linear 层
-        irreps_key = str(irreps_out)
+        # Create Linear in this way will cause no gradient tracking
+        # # 创建或获取 Linear 层
+        # irreps_key = str(irreps_out)
         
-        if irreps_key not in self._linear_layers:
-            self._linear_layers[irreps_key] = Linear(irreps_out, self.cartesian_tensor)
-            self._linear_layers[irreps_key].to(global_feature.device)
-        else:
-            linear_layer = self._linear_layers[irreps_key]
-            if next(linear_layer.parameters()).device != global_feature.device:
-                self._linear_layers[irreps_key].to(global_feature.device)
+        # if irreps_key not in self._linear_layers:
+        #     self._linear_layers[irreps_key] = Linear(irreps_out, self.cartesian_tensor)
+        #     self._linear_layers[irreps_key].to(global_feature.device)
+        # else:
+        #     linear_layer = self._linear_layers[irreps_key]
+        #     if next(linear_layer.parameters()).device != global_feature.device:
+        #         self._linear_layers[irreps_key].to(global_feature.device)
         
-        linear_out = self._linear_layers[irreps_key]
-        global_feature = linear_out(global_feature)
+        # linear_out = self._linear_layers[irreps_key]
+
+
+        global_feature = self.linear_out(global_feature)
 
         if self.l_max == 0:
             cart_property = global_feature

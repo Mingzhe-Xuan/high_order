@@ -143,6 +143,7 @@ def _create_scalar_models(
         readout_layer = ReadoutLayer(
             l_max=0,
             symmetry=None,
+            irreps_out=final_irreps_out,
         )
 
         model = Model(
@@ -211,6 +212,7 @@ def _create_tensor_models(
         readout_layer = ReadoutLayer(
             l_max=readout_config["l_max"],
             symmetry=readout_config["symmetry"],
+            irreps_out=final_irreps_out,
         )
 
         model = Model(
@@ -484,6 +486,7 @@ def train(
         self_readout_layer = ReadoutLayer(
             l_max=1,
             symmetry=None,
+            irreps_out=final_irreps_out,
         )
         self_model = Model(
             embedding_layer=embedding_layer,

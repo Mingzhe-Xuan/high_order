@@ -226,9 +226,9 @@ class Model(nn.Module):
                 ) / len(atom_feature_list)
             # global_feature: (num_graphs, irreps_out.dim)
             global_feature = scatter(atom_feature, batch_index, dim=0, reduce="mean")
-            property_out = self.readout_layer(global_feature, self.final_mlp.irreps_out)
+            property_out = self.readout_layer(global_feature)
             return property_out
         else:
             # force_out: (num_nodes, 3)
-            force_out = self.readout_layer(atom_feature, self.final_mlp.irreps_out)
+            force_out = self.readout_layer(atom_feature)
             return force_out

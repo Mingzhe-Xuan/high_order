@@ -11,11 +11,13 @@ try:
     from .tensor_product import get_tp
     from .utils import add_irreps_tensor
     from .utils.add_irreps_tensor import selective_residual_add
+    from .final_mlp import FinalMLP
 except ImportError:
     # For equivariance test
     from tensor_product import get_tp
     from utils import add_irreps_tensor
     from utils.add_irreps_tensor import selective_residual_add
+    from final_mlp import FinalMLP
 from .layer_norm import SeperableLayerNorm
 
 class BaseEquivariantLayer(nn.Module):
@@ -34,7 +36,8 @@ class BaseEquivariantLayer(nn.Module):
         self.irreps_in = Irreps(irreps_in)
         self.irreps_out = Irreps(irreps_out)
         self.irreps_vec = Irreps(irreps_vec) if irreps_vec is not None else self.irreps_in
-        self.irreps_hidden = Irreps(irreps_hidden) if irreps_hidden is not None else self.irreps_in
+        default_irreps_hidden = self.irreps_in + self.irreps_out
+        self.irreps_hidden = Irreps(irreps_hidden) if irreps_hidden is not None else default_irreps_hidden
 
     def compute_spherical_harmonics(self, edge_vector: torch.Tensor, irreps_vec: Irreps = None):
         """Compute spherical harmonics for edge vectors."""
@@ -293,6 +296,7 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         else:
             self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
         self.norm = SeperableLayerNorm(self.irreps_out)
+        self.final_mlp = FinalMLP(self.irreps_out, self.irreps_out, self.irreps_hidden, num_hidden_layers=1)
 
     def tpconv_with_edge_update(
         self,
@@ -335,8 +339,8 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
                 self.irreps_in, self.irreps_out, edge_feature, message
             )
         else:
-            atom_feature = aggregated_message
-            edge_feature = message
+            atom_feature = self.final_mlp(aggregated_message)
+            edge_feature = self.final_mlp(message)
         return atom_feature, edge_feature
 
     def forward(
