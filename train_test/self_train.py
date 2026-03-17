@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
 from pathlib import Path
@@ -68,6 +69,11 @@ def self_train(
         model: The trained model
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    tensorboard_dir = os.path.join(checkpoint_dir, "tensorboard", "self_train")
+    os.makedirs(tensorboard_dir, exist_ok=True)
+    writer = SummaryWriter(tensorboard_dir)
+    
     model = Model(
         embedding_layer,
         invariant_layers,
@@ -187,6 +193,9 @@ def self_train(
         train_losses.append(avg_loss)
         sched.step()
 
+        writer.add_scalar("Loss/train", avg_loss, epoch)
+        writer.add_scalar("Learning_Rate", sched.get_last_lr()[0], epoch)
+
         print(f"Epoch {epoch+1}/{num_epochs}, Avg Loss: {avg_loss:.6f}")
 
         checkpoint_data = {
@@ -224,6 +233,8 @@ def self_train(
             print(f"Saved checkpoint at epoch {epoch+1} to {checkpoint_path}")
 
     print(f"Training completed. Best loss: {best_loss:.6f}")
+    
+    writer.close()
     
     vis_dir = get_visualization_dir(pic_dir)
     self_train_vis_dir = os.path.join(vis_dir, "self_train")
