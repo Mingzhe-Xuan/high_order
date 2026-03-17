@@ -147,6 +147,7 @@ def scalar_train(
             raise ValueError(f"Checkpoint is missing required keys: {missing_keys}")
         
         model.load_state_dict(checkpoint["model_state_dict"])
+        model = model.to(device)
         opt.load_state_dict(checkpoint["optimizer_state_dict"])
         sched.load_state_dict(checkpoint["scheduler_state_dict"])
         start_epoch = checkpoint["epoch"] + 1

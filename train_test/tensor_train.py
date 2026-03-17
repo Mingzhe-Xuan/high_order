@@ -175,6 +175,7 @@ def tensor_train(
             raise ValueError(f"Checkpoint is missing required keys: {missing_keys}")
 
         model.load_state_dict(checkpoint["model_state_dict"])
+        model = model.to(device)
         # Store checkpoint state dicts to load after optimizer/scheduler creation
         optimizer_checkpoint = checkpoint["optimizer_state_dict"]
         scheduler_checkpoint = checkpoint["scheduler_state_dict"]
@@ -245,6 +246,7 @@ def tensor_train(
     if limit is None:
         limit = num_epochs
     model.train()
+    print(f"Training {property_name} model...")
     for epoch in range(start_epoch, min(num_epochs, start_epoch + limit)):
         epoch_loss = 0.0
         epoch_mae_sum = 0.0
