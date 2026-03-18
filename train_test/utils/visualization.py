@@ -157,8 +157,8 @@ def plot_prediction_scatter(
 
         for idx in np.ndindex(tensor_shape):
             comp_idx = np.ravel_multi_index(idx, tensor_shape)
-            true_vals = y_true[:, idx]
-            pred_vals = y_pred[:, idx]
+            true_vals = y_true[tuple([slice(None)] + list(idx))]
+            pred_vals = y_pred[tuple([slice(None)] + list(idx))]
             label = f"Component {idx}"
             plt.scatter(true_vals, pred_vals, alpha=0.6, s=20, 
                        color=colors[comp_idx], label=label)

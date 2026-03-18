@@ -141,6 +141,13 @@ def tensor_test(
                     atom_type, edge_vec, edge_index, batch_index
                 )
 
+                # # For debugging
+                # print(f"pred_tensor_property: {pred_tensor_property}")
+                # print(f"tensor_property: {tensor_property}")
+                # print(f"pred_tensor_property shape: {pred_tensor_property.shape}")
+                # print(f"tensor_property shape: {tensor_property.shape}")
+                # exit()
+
                 all_true_values.append(tensor_property.cpu())
                 all_pred_values.append(pred_tensor_property.cpu())
 
@@ -150,6 +157,11 @@ def tensor_test(
 
             all_true_values = torch.cat(all_true_values, dim=0)
             all_pred_values = torch.cat(all_pred_values, dim=0)
+            
+            # print("="*100)
+            # print(all_true_values.shape)
+            # print("="*100)
+            # assert (torch.tensor(all_pred_values) == torch.zeros_like(all_pred_values)).all()
 
             metrics = calculate_tensor_metrics(all_true_values, all_pred_values)
             avg_loss = total_loss / num_batches
