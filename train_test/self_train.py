@@ -169,6 +169,12 @@ def self_train(
                     pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
                     loss = loss_fn(pred_force, force)
                 
+                if torch.isnan(loss):
+                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"Skipping this batch to prevent parameter update")
+                    scaler.update()
+                    continue
+                
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
@@ -177,6 +183,12 @@ def self_train(
             else:
                 pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
                 loss = loss_fn(pred_force, force)
+                
+                if torch.isnan(loss):
+                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"Skipping this batch to prevent parameter update")
+                    continue
+                
                 loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)

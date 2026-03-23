@@ -289,6 +289,12 @@ def tensor_train(
                     pred_tensor_property = model(atom_type, edge_vec, edge_index, batch_index)
                     loss = loss_fn(pred_tensor_property, tensor_property)
                 
+                if torch.isnan(loss):
+                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"Skipping this batch to prevent parameter update")
+                    scaler.update()
+                    continue
+                
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
@@ -297,7 +303,12 @@ def tensor_train(
             else:
                 pred_tensor_property = model(atom_type, edge_vec, edge_index, batch_index)
                 loss = loss_fn(pred_tensor_property, tensor_property)
-
+                
+                if torch.isnan(loss):
+                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"Skipping this batch to prevent parameter update")
+                    continue
+                
                 loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)

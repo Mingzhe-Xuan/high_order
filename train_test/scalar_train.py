@@ -226,6 +226,12 @@ def scalar_train(
                     assert num_atoms.shape == scalar_property.shape, f"num_atoms shape: {num_atoms.shape}, scalar_property shape: {scalar_property.shape}"
                     loss = loss_fn(pred_scalar_property, scalar_property)
                 
+                if torch.isnan(loss):
+                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"Skipping this batch to prevent parameter update")
+                    scaler.update()
+                    continue
+                
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
@@ -234,16 +240,20 @@ def scalar_train(
             else:
                 pred_scalar_property = model(atom_type, edge_vec, edge_index, batch_index)
                 loss = loss_fn(pred_scalar_property, scalar_property)
+                
+                if torch.isnan(loss):
+                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"Skipping this batch to prevent parameter update")
+                    continue
+                
                 loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
                 opt.step()
             
             if property_name in ["formation_energy", "total_energy", "e_form"]:
-                # mae per atom
                 mae = (pred_scalar_property - scalar_property).abs().div(num_atoms).mean()
             else:
-                # mae per structure
                 mae = (pred_scalar_property - scalar_property).abs().mean()
 
             epoch_loss += loss.item()
