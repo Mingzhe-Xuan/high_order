@@ -141,27 +141,30 @@ def scalar_test(
             if train_history is not None and prop in train_history:
                 prop_history = train_history[prop]
                 
-                train_metrics = {
-                    "train_loss": prop_history.get("train_losses", []),
-                    "train_mae": prop_history.get("train_mae", []),
-                }
+                train_losses = prop_history.get("train_losses", [])
+                train_mae = prop_history.get("train_mae", [])
+                val_losses = prop_history.get("val_losses", [])
+                val_mae_scores = prop_history.get("val_mae_scores", [])
                 
-                val_metrics = {
-                    "val_loss": prop_history.get("val_losses", []),
-                    "val_mae": prop_history.get("val_mae_scores", []),
-                }
-                
-                test_metrics = {
-                    "loss": avg_loss,
-                    "mae": metrics['mae'],
-                }
+                test_loss = avg_loss
+                test_mae = metrics['mae']
                 
                 plot_train_val_test_metrics(
-                    train_metrics=train_metrics,
-                    val_metrics=val_metrics,
-                    test_metrics=test_metrics,
+                    train_values=train_losses,
+                    val_values=val_losses,
+                    test_value=test_loss,
                     save_dir=property_vis_dir,
                     property_name=prop,
+                    metric_name="loss",
+                )
+                
+                plot_train_val_test_metrics(
+                    train_values=train_mae,
+                    val_values=val_mae_scores,
+                    test_value=test_mae,
+                    save_dir=property_vis_dir,
+                    property_name=prop,
+                    metric_name="mae",
                 )
 
     return results

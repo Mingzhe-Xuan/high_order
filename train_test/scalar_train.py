@@ -138,6 +138,22 @@ def scalar_train(
     opt = None
     sched = None
 
+    if optimizer == "adamw":
+        opt = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer == "adam":
+        opt = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer == "sgd":
+        opt = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    else:
+        raise NotImplementedError(f"optimizer {optimizer} is not implemented")
+
+    if scheduler == "cosine_annealing":
+        sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
+    elif scheduler == "step":
+        sched = optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)
+    else:
+        raise NotImplementedError(f"scheduler {scheduler} is not implemented")
+
     if resume_from and os.path.exists(resume_from):
         checkpoint = load_checkpoint(resume_from, device)
         
@@ -168,24 +184,6 @@ def scalar_train(
         
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
 
-    if opt is None:
-        if optimizer == "adamw":
-            opt = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        elif optimizer == "adam":
-            opt = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        elif optimizer == "sgd":
-            opt = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        else:
-            raise NotImplementedError(f"optimizer {optimizer} is not implemented")
-
-    if sched is None:
-        if scheduler == "cosine_annealing":
-            sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
-        elif scheduler == "step":
-            sched = optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)
-        else:
-            raise NotImplementedError(f"scheduler {scheduler} is not implemented")
-
     batches = scalar_trainset
 
     if loss_func == "huber":
@@ -199,6 +197,11 @@ def scalar_train(
 
     if limit is None:
         limit = num_epochs
+    
+    val_mae = 0.0
+    if val_mae_scores:
+        val_mae = val_mae_scores[-1]
+    
     model.train()
     for epoch in range(start_epoch, min(num_epochs, start_epoch + limit)):
         epoch_loss = 0.0
@@ -212,12 +215,15 @@ def scalar_train(
             edge_vec = batch.edge_vec.to(device)
             batch_index = batch.batch.to(device)
             scalar_property = batch.scalar_property.to(device)
+            num_atoms = batch.num_nodes.to(device)
 
             opt.zero_grad()
             
             if use_amp and device.type == "cuda":
                 with torch.cuda.amp.autocast():
                     pred_scalar_property = model(atom_type, edge_vec, edge_index, batch_index)
+                    assert pred_scalar_property.shape == scalar_property.shape, f"pred_scalar_property shape: {pred_scalar_property.shape}, scalar_property shape: {scalar_property.shape}"
+                    assert num_atoms.shape == scalar_property.shape, f"num_atoms shape: {num_atoms.shape}, scalar_property shape: {scalar_property.shape}"
                     loss = loss_fn(pred_scalar_property, scalar_property)
                 
                 scaler.scale(loss).backward()
@@ -233,7 +239,12 @@ def scalar_train(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
                 opt.step()
             
-            mae = (pred_scalar_property - scalar_property).abs().mean()
+            if property_name in ["formation_energy", "total_energy", "e_form"]:
+                # mae per atom
+                mae = (pred_scalar_property - scalar_property).abs().div(num_atoms).mean()
+            else:
+                # mae per structure
+                mae = (pred_scalar_property - scalar_property).abs().mean()
 
             epoch_loss += loss.item()
             epoch_mae += mae.item()

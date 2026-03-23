@@ -93,6 +93,22 @@ def self_train(
     opt = None
     sched = None
 
+    if optimizer == "adamw":
+        opt = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer == "adam":
+        opt = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    elif optimizer == "sgd":
+        opt = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    else:
+        raise NotImplementedError(f"optimizer {optimizer} is not implemented")
+
+    if scheduler == "cosine_annealing":
+        sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
+    elif scheduler == "step":
+        sched = optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)
+    else:
+        raise NotImplementedError(f"scheduler {scheduler} is not implemented")
+
     if resume_from and os.path.exists(resume_from):
         checkpoint = load_checkpoint(resume_from, device)
         
@@ -118,24 +134,6 @@ def self_train(
             print("Warning: Checkpoint was saved without AMP, but use_amp=True. Starting with fresh scaler.")
         
         print(f"Resumed from checkpoint: {resume_from}, epoch {start_epoch}")
-
-    if opt is None:
-        if optimizer == "adamw":
-            opt = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        elif optimizer == "adam":
-            opt = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        elif optimizer == "sgd":
-            opt = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        else:
-            raise NotImplementedError(f"optimizer {optimizer} is not implemented")
-
-    if sched is None:
-        if scheduler == "cosine_annealing":
-            sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
-        elif scheduler == "step":
-            sched = optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)
-        else:
-            raise NotImplementedError(f"scheduler {scheduler} is not implemented")
 
     batches = dataloader
 
