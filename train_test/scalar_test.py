@@ -14,7 +14,7 @@ from src.train_test.utils.visualization import (
 )
 
 
-def calculate_metrics(y_true, y_pred):
+def calculate_metrics(y_true, y_pred, num_atoms, per_atom=False):
     """
     Calculate various metrics for model evaluation.
     
@@ -30,9 +30,17 @@ def calculate_metrics(y_true, y_pred):
     if not torch.is_tensor(y_pred):
         y_pred = torch.tensor(y_pred)
     
-    mae = F.l1_loss(y_pred, y_true)
-    mse = F.mse_loss(y_pred, y_true)
-    rmse = torch.sqrt(mse)
+    # mae = F.l1_loss(y_pred, y_true)
+    # mse = F.mse_loss(y_pred, y_true)
+    # rmse = torch.sqrt(mse)
+    if per_atom:
+        mae = torch.mean(torch.abs(y_pred - y_true) / num_atoms)
+        mse = torch.mean((y_pred - y_true) ** 2 / num_atoms)
+        rmse = torch.sqrt(mse)
+    else:
+        mae = F.l1_loss(y_pred, y_true)
+        mse = F.mse_loss(y_pred, y_true)
+        rmse = torch.sqrt(mse)
     
     epsilon = 1e-8
     mape = torch.mean(torch.abs((y_true - y_pred) / (y_true + epsilon))) * 100
@@ -87,6 +95,7 @@ def scalar_test(
             
             all_true_values = []
             all_pred_values = []
+            all_num_atoms = []
             total_loss = 0.0
             num_batches = 0
 
@@ -96,11 +105,13 @@ def scalar_test(
                 edge_vec = batch.edge_vec.to(device)
                 batch_index = batch.batch.to(device)
                 scalar_property = batch.scalar_property.to(device)
+                num_atoms = torch.bincount(batch_index).to(device)
                 
                 pred_scalar_property = scalar_models[prop](atom_type, edge_vec, edge_index, batch_index)
                 
                 all_true_values.append(scalar_property.cpu())
                 all_pred_values.append(pred_scalar_property.cpu())
+                all_num_atoms.append(num_atoms.cpu())
                 
                 batch_loss = F.mse_loss(pred_scalar_property, scalar_property)
                 total_loss += batch_loss.item()
@@ -108,8 +119,11 @@ def scalar_test(
             
             all_true_values = torch.cat(all_true_values, dim=0)
             all_pred_values = torch.cat(all_pred_values, dim=0)
+            all_num_atoms = torch.cat(all_num_atoms, dim=0)
             
-            metrics = calculate_metrics(all_true_values, all_pred_values)
+            per_atom = True if prop in ["formation_energy", "total_energy", "e_form"]  else False
+            
+            metrics = calculate_metrics(all_true_values, all_pred_values, all_num_atoms, per_atom)
             avg_loss = total_loss / num_batches
             
             print(f"\nScalar Test Results for {prop}:")

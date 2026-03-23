@@ -215,7 +215,7 @@ def scalar_train(
             edge_vec = batch.edge_vec.to(device)
             batch_index = batch.batch.to(device)
             scalar_property = batch.scalar_property.to(device)
-            num_atoms = batch.num_nodes.to(device)
+            num_atoms = torch.bincount(batch_index).to(device)
 
             opt.zero_grad()
             
