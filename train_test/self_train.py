@@ -15,6 +15,12 @@ from src.train_test.utils.checkpoint import (
     load_checkpoint,
 )
 
+def has_nan_inf(model):
+    for param in model.parameters():
+        if torch.isnan(param).any() or torch.isinf(param).any():
+            return True
+    return False
+
 
 def self_train(
     embedding_layer,
@@ -87,6 +93,9 @@ def self_train(
 
     best_loss = float("inf")
     train_losses = []
+    train_mae = []
+    train_mse = []
+    train_mean_fnorm_percent_error = []
 
     scaler = torch.cuda.amp.GradScaler() if use_amp and device.type == "cuda" else None
 
@@ -123,6 +132,9 @@ def self_train(
         start_epoch = checkpoint["epoch"] + 1
         best_loss = checkpoint["best_loss"]
         train_losses = checkpoint["train_losses"]
+        train_mae = checkpoint.get("train_mae", [])
+        train_mse = checkpoint.get("train_mse", [])
+        train_mean_fnorm_percent_error = checkpoint.get("train_mean_fnorm_percent_error", [])
         
         checkpoint_use_amp = checkpoint.get("use_amp", True)
         if checkpoint_use_amp and "scaler_state_dict" in checkpoint:
@@ -151,26 +163,56 @@ def self_train(
     model.train()
     for epoch in range(start_epoch, min(num_epochs, start_epoch + limit)):
         epoch_loss = 0.0
+        epoch_mae_sum = 0.0
+        epoch_mse_sum = 0.0
+        epoch_fnorm_err_sum = 0.0
         num_batches = 0
 
         pbar = tqdm(batches, desc=f"Epoch {epoch+1}/{num_epochs}")
         for batch in pbar:
+            # # For debugging, skip the first 2610 batches
+            # # if num_batches < 2610:
+            # if num_batches < 4016:
+            #     num_batches += 1
+            #     continue
             atom_type = batch.atom_type.to(device)
             edge_index = batch.edge_index.to(device)
             edge_vec = batch.edge_vec.to(device)
             unstable_edge_vec = batch.unstable_edge_vec.to(device)
             batch_index = batch.batch.to(device)
             force = batch.force.to(device)
+            # assert atom_type
+            # assert force
+            # assert edge_index
+            # print("="*50)
+            # print(atom_type)
+            # print(edge_index)
+            # print(force)
+            # print("="*50)
 
             opt.zero_grad()
             
             if use_amp and device.type == "cuda":
                 with torch.cuda.amp.autocast():
                     pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
+                    # assert pred_force is not None
                     loss = loss_fn(pred_force, force)
+                    pointwise_mae = (pred_force - force).view(-1).abs().mean()
+                    mse = (pred_force - force).view(-1).pow(2).mean()
+                    fnorm_error = abs(
+                        torch.norm(pred_force, dim=-1) - torch.norm(force, dim=-1)
+                    )
+                    fnorm = torch.norm(force, dim=-1)
+                    mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
+
+                # if has_nan_inf(model):
+                #     print("Nan or inf detected in model parameters!")
+                #     print(model.state_dict())
+                #     exit(1)
                 
                 if torch.isnan(loss):
-                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"NaN loss detected at epoch {epoch+1}, batch {num_batches}")
+                    # num_batches += 1
                     print(f"Skipping this batch to prevent parameter update")
                     scaler.update()
                     continue
@@ -182,10 +224,25 @@ def self_train(
                 scaler.update()
             else:
                 pred_force = model(atom_type, unstable_edge_vec, edge_index, batch_index)
+                # print("pred_force:", pred_force)
+                # assert pred_force.all()
                 loss = loss_fn(pred_force, force)
+                pointwise_mae = (pred_force - force).view(-1).abs().mean()
+                mse = (pred_force - force).view(-1).pow(2).mean()
+                fnorm_error = abs(
+                    torch.norm(pred_force, dim=-1) - torch.norm(force, dim=-1)
+                )
+                fnorm = torch.norm(force, dim=-1)
+                mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
+
+                if has_nan_inf(model):
+                    print("Nan or inf detected in model parameters!")
+                    print(model.state_dict())
+                    exit(1)
                 
                 if torch.isnan(loss):
-                    print(f"NaN loss detected at epoch {epoch}, batch {num_batches}")
+                    print(f"NaN loss detected at epoch {epoch+1}, batch {num_batches}")
+                    # num_batches += 1
                     print(f"Skipping this batch to prevent parameter update")
                     continue
                 
@@ -195,18 +252,41 @@ def self_train(
                 opt.step()
 
             epoch_loss += loss.item()
+            epoch_mae_sum += pointwise_mae.item()
+            epoch_mse_sum += mse.item()
+            epoch_fnorm_err_sum += mean_fnorm_percent_error.item()
             num_batches += 1
 
-            pbar.set_postfix({"loss": f"{loss.item():.6f}"})
+            pbar.set_postfix({
+                "loss": f"{loss.item():.6f}",
+                "mae": f"{pointwise_mae.item():.6f}",
+                "mse": f"{mse.item():.6f}",
+                "fnorm_err%": f"{mean_fnorm_percent_error.item():.6f}"
+            })
 
         avg_loss = epoch_loss / num_batches
+        avg_mae = epoch_mae_sum / num_batches
+        avg_mse = epoch_mse_sum / num_batches
+        avg_fnorm_err = epoch_fnorm_err_sum / num_batches
+        
         train_losses.append(avg_loss)
+        train_mae.append(avg_mae)
+        train_mse.append(avg_mse)
+        train_mean_fnorm_percent_error.append(avg_fnorm_err)
+        
         sched.step()
 
         writer.add_scalar("Loss/train", avg_loss, epoch)
+        writer.add_scalar("MAE/train", avg_mae, epoch)
+        writer.add_scalar("MSE/train", avg_mse, epoch)
+        writer.add_scalar("FNorm_Percent_Error/train", avg_fnorm_err, epoch)
         writer.add_scalar("Learning_Rate", sched.get_last_lr()[0], epoch)
 
-        print(f"Epoch {epoch+1}/{num_epochs}, Avg Loss: {avg_loss:.6f}")
+        print(
+            f"Epoch {epoch+1}/{num_epochs}, Train Loss: {avg_loss:.6f}, "
+            f"Train MAE: {avg_mae:.6f}, Train MSE: {avg_mse:.6f}, "
+            f"Train Mean FNORM % Error: {avg_fnorm_err:.6f}"
+        )
 
         checkpoint_data = {
             "epoch": epoch + 1,
@@ -216,6 +296,9 @@ def self_train(
             "loss": avg_loss,
             "best_loss": best_loss,
             "train_losses": train_losses,
+            "train_mae": train_mae,
+            "train_mse": train_mse,
+            "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
         }
         if use_amp and device.type == "cuda" and scaler is not None:
             checkpoint_data["scaler_state_dict"] = scaler.state_dict()
@@ -259,6 +342,42 @@ def self_train(
         val_color="orange",
         title="Self-Training Loss Over Epochs",
         filename="self_train_loss.png",
+    )
+    
+    plot_train_val_metrics(
+        train_values=train_mae,
+        val_values=[],
+        save_dir=self_train_vis_dir,
+        property_name="self_train",
+        metric_name="mae",
+        train_color="red",
+        val_color="green",
+        title="Self-Training MAE Over Epochs",
+        filename="self_train_mae.png",
+    )
+    
+    plot_train_val_metrics(
+        train_values=train_mse,
+        val_values=[],
+        save_dir=self_train_vis_dir,
+        property_name="self_train",
+        metric_name="mse",
+        train_color="purple",
+        val_color="brown",
+        title="Self-Training MSE Over Epochs",
+        filename="self_train_mse.png",
+    )
+    
+    plot_train_val_metrics(
+        train_values=train_mean_fnorm_percent_error,
+        val_values=[],
+        save_dir=self_train_vis_dir,
+        property_name="self_train",
+        metric_name="mean_fnorm_percent_error",
+        train_color="olive",
+        val_color="teal",
+        title="Self-Training Mean FNORM % Error Over Epochs",
+        filename="self_train_fnorm_error.png",
     )
     
     return model

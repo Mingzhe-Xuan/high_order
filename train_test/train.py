@@ -63,9 +63,19 @@ def _create_shared_components(
     # Build irreps list
     irreps_list = [f"{scalar_dim}x0e"]
     l_max = num_equi_layers
+
+    #####################################################################
+    # SO(3) PROBLEM
     for l in range(1, l_max + 1):
-        p = "e" if l % 2 == 0 else "o"
-        irreps_list.append(f"{scalar_dim}x0e+{vec_dim}x{l}{p}")
+        irreps = f"{scalar_dim}x0e"
+        for _l in range(l + 1):
+            _p = "e" if _l % 2 == 0 else "o"
+            irreps += f"+{vec_dim}x{_l}{_p}"
+        irreps_list.append(irreps)
+    print(irreps_list)
+
+    # irreps = ""
+    #####################################################################
 
     # create irreps_vec
     irreps_vec = "0e"
