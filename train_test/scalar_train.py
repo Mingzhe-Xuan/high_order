@@ -251,9 +251,11 @@ def scalar_train(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
                 opt.step()
             
-            if property_name in ["formation_energy", "total_energy", "e_form"]:
-                mae = (pred_scalar_property - scalar_property).abs().div(num_atoms).mean()
-            else:
+            # energy in dataset has already calculated per-atom-ly
+            # if property_name in ["formation_energy", "total_energy", "e_form"]:
+            #     mae = (pred_scalar_property - scalar_property).abs().div(num_atoms).mean()
+            # else:
+            if True:
                 mae = (pred_scalar_property - scalar_property).abs().mean()
 
             epoch_loss += loss.item()

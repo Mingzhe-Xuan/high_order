@@ -121,7 +121,9 @@ def scalar_test(
             all_pred_values = torch.cat(all_pred_values, dim=0)
             all_num_atoms = torch.cat(all_num_atoms, dim=0)
             
-            per_atom = True if prop in ["formation_energy", "total_energy", "e_form"]  else False
+            # energy in dataset has already calculated per-atom-ly
+            # per_atom = True if prop in ["formation_energy", "total_energy", "e_form"]  else False
+            per_atom = False
             
             metrics = calculate_metrics(all_true_values, all_pred_values, all_num_atoms, per_atom)
             avg_loss = total_loss / num_batches
