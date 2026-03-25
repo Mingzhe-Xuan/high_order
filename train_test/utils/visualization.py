@@ -57,7 +57,8 @@ def plot_train_val_metrics(
 
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_values, label="Train", color=train_color, linewidth=2)
-    plt.plot(epochs, val_values, label="Validation", color=val_color, linewidth=2)
+    if val_values:
+        plt.plot(epochs, val_values, label="Validation", color=val_color, linewidth=2)
     plt.xlabel(xlabel, fontsize=12)
     plt.ylabel(ylabel, fontsize=12)
     plt.title(title, fontsize=14)
@@ -99,7 +100,8 @@ def plot_train_val_test_metrics(
 
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_values, label="Train", color=train_color, linewidth=2)
-    plt.plot(epochs, val_values, label="Validation", color=val_color, linewidth=2)
+    if val_values:
+        plt.plot(epochs, val_values, label="Validation", color=val_color, linewidth=2)
     plt.axhline(
         y=test_value, color=test_color, linestyle="--", linewidth=2, label=f"Test: {test_value:.6f}"
     )

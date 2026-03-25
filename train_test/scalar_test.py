@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import numpy as np
 from torch_geometric.loader import DataLoader
+from typing import Union
 
 from data import scalar_properties
 from src.train_test.utils.visualization import (
@@ -63,7 +64,7 @@ def scalar_test(
     scalar_dataloaders: dict[str, DataLoader],
     pic_dir: str,
     metric_dir: str = "metrics",
-    train_history: dict = None,
+    train_history: Union[dict, None] = None,
 ):
     """
     Test scalar property prediction models.
