@@ -594,9 +594,10 @@ def train(
             scalar_models[prop] = trained_model
             scalar_train_history[prop] = history
 
-            embedding_layer = trained_model.embedding_layer
-            invariant_layers = trained_model.invariant_layers
-            equivariant_layers = trained_model.equivariant_layers
+            # Each scalar property has its own model
+            # embedding_layer = trained_model.embedding_layer
+            # invariant_layers = trained_model.invariant_layers
+            # equivariant_layers = trained_model.equivariant_layers
     else:
         scalar_models = None
 
@@ -646,11 +647,12 @@ def train(
             tensor_models[prop] = trained_model
             tensor_train_history[prop] = history
 
-            equi_shared = True
-            if equi_shared:
-                embedding_layer = trained_model.embedding_layer
-                invariant_layers = trained_model.invariant_layers
-                equivariant_layers = trained_model.equivariant_layers
+            # Each tensor property has its own model
+            # equi_shared = True
+            # if equi_shared:
+            #     embedding_layer = trained_model.embedding_layer
+            #     invariant_layers = trained_model.invariant_layers
+            #     equivariant_layers = trained_model.equivariant_layers
     else:
         tensor_models = None
 
