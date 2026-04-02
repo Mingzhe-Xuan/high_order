@@ -292,6 +292,7 @@ def train(
     save_interval: int = 5,
     optimizer: str = "adamw",
     scheduler: str = "cosine_annealing",
+    warmup_periods: int = 10,
     self_loss_func: str = "huber",
     scalar_loss_func: str = "huber",
     tensor_loss_func: str = "huber",
@@ -538,6 +539,7 @@ def train(
             weight_decay=weight_decay,
             optimizer=optimizer,
             scheduler=scheduler,
+            warmup_periods=warmup_periods,
             limit=self_limit,
             use_amp=use_amp,
         )

@@ -41,7 +41,8 @@ def self_train(
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-5,
     optimizer: str = "adamw",
-    scheduler: str = "cosine_annealing",
+    scheduler: str = "cosine_warm_restarts",
+    warmup_periods: int = 10,
     limit: int = None,
     use_amp: bool = True,
 ):
@@ -67,7 +68,8 @@ def self_train(
         learning_rate: Learning rate for optimizer
         weight_decay: Weight decay for optimizer
         optimizer: Type of optimizer ('adamw', 'adam', 'sgd')
-        scheduler: Type of scheduler ('cosine_annealing', 'step')
+        scheduler: Type of scheduler ('cosine_annealing', 'step', 'cosine_warm_restarts')
+        warmup_periods: Number of periods for cosine warm restarts (default: 50)
         limit: Limit number of epochs (optional)
         use_amp: Whether to use automatic mixed precision
 
@@ -115,6 +117,8 @@ def self_train(
         sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
     elif scheduler == "step":
         sched = optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)
+    elif scheduler == "cosine_warm_restarts":
+        sched = optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=warmup_periods, T_mult=2)
     else:
         raise NotImplementedError(f"scheduler {scheduler} is not implemented")
 

@@ -214,7 +214,7 @@ def tensor_train(
             raise NotImplementedError(f"optimizer {optimizer_name} is not implemented")
 
     if scheduler is None:
-        if scheduler_name == "cosine_annealing":
+        if scheduler_name == "cosine_annealing" or scheduler_name == "cosine_warm_restarts":
             scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
         elif scheduler_name == "step":
             scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
