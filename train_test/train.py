@@ -13,6 +13,7 @@ from .scalar_train import scalar_train
 from .tensor_train import tensor_train
 from .utils import analyze_model_components, save_num_params_markdown
 from .utils.checkpoint import get_checkpoint_dir
+from .utils.freeze_parameters import freeze_parameters
 from data import scalar_properties, tensor_properties, readout_configs
 from src.model import (
     EmbeddingLayer,
@@ -305,6 +306,7 @@ def train(
     resume_self_train: str = None,
     resume_scalar_train: str = None,
     resume_tensor_train: str = None,
+    freeze: bool = False,
     use_amp: bool = False,
 ):
     """
@@ -547,6 +549,11 @@ def train(
         embedding_layer = self_trained_model.embedding_layer
         invariant_layers = self_trained_model.invariant_layers
         equivariant_layers = self_trained_model.equivariant_layers
+
+        if freeze:
+            embedding_layer = freeze_parameters(embedding_layer)
+            invariant_layers = freeze_parameters(invariant_layers)
+            equivariant_layers = freeze_parameters(equivariant_layers)
 
     if need_scalar_train:
         scalar_models = _create_scalar_models(

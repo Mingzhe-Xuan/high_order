@@ -47,6 +47,8 @@ def calculate_tensor_metrics(y_true, y_pred):
     fnorm_error = torch.abs(
         torch.norm(y_pred, dim=property_dim) - torch.norm(y_true, dim=property_dim)
     )
+    # scalar
+    mean_fnorm_error = fnorm_error.mean()
     # (num_strctures,)
     fnorm = torch.norm(y_true, dim=property_dim)
     # scalar
@@ -82,6 +84,7 @@ def calculate_tensor_metrics(y_true, y_pred):
         "mse": mse.item(),
         "rmse": rmse.item(),
         "pointwise_mae": pointwise_mae.item(),
+        "mean_fnorm_error": mean_fnorm_error.item(),
         "mean_fnorm_percent_error": mean_fnorm_percent_error.item(),
         "mape": mape.item(),
         "EwT_25": EwT_25.item(),
@@ -172,6 +175,7 @@ def tensor_test(
             print(f"  MSE: {metrics['mse']:.6f}")
             print(f"  RMSE: {metrics['rmse']:.6f}")
             print(f"  Pointwise MAE: {metrics['pointwise_mae']:.6f}")
+            print(f"  Mean FNORM Error: {metrics['mean_fnorm_error']:.6f}")
             print(f"  Mean FNORM % Error: {metrics['mean_fnorm_percent_error']:.6f}%")
             print(f"  MAPE: {metrics['mape']:.6f}%")
             print(f"  EwT_25: {metrics['EwT_25']:.2f}%")

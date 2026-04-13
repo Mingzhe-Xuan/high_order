@@ -198,6 +198,7 @@ def main(
     resume_self_train: str = None,
     resume_scalar_train: str = None,
     resume_tensor_train: str = None,
+    freeze: bool = False,
 ):
     print("Start running...")
     
@@ -233,6 +234,7 @@ def main(
         "need_self_train": need_self_train,
         "need_scalar_train": need_scalar_train,
         "need_tensor_train": need_tensor_train,
+        "freeze": freeze,
         "final_pooling": final_pooling,
         "self_num_epochs": self_num_epochs,
         "scalar_num_epochs": scalar_num_epochs,
@@ -265,6 +267,7 @@ def main(
             shuffle=True,
             worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
         )
+        # self_trainset = get_alexandria_loader()
     else:
         self_trainset = None
     if need_scalar_train:
@@ -357,6 +360,7 @@ def main(
         resume_self_train=resume_self_train,
         resume_scalar_train=resume_scalar_train,
         resume_tensor_train=resume_tensor_train,
+        freeze=freeze,
     )
 
     print("Start testing...")
