@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from src.model import Model
-from data import get_mp_dataloader
+from data import get_mp_dataloader, get_alexandria_dataloader
 from src.train_test.utils.visualization import get_visualization_dir, plot_train_val_metrics
 from src.train_test.utils.checkpoint import (
     save_checkpoint,

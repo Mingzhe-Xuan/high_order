@@ -58,6 +58,7 @@ def worker_init_fn(worker_id: int, seed: int):
 
 from data import (
     get_mp_dataloader,
+    get_alexandria_dataloader,
     get_scalar_dataloaders_split,
     get_tensor_dataloaders_split,
     scalar_properties,
@@ -259,15 +260,26 @@ def main(
 
     print("Start loading data...")
     if need_self_train:
-        self_trainset = get_mp_dataloader(
-            cutoff=cutoff,
-            batch_size=train_batch_size,
-            pin_memory=pin_memory,
-            num_workers=num_workers,
-            shuffle=True,
-            worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
-        )
-        # self_trainset = get_alexandria_loader()
+        USE_MP = True
+        USE_ALEX = False
+        if USE_MP:
+            self_trainset = get_mp_dataloader(
+                cutoff=cutoff,
+                batch_size=train_batch_size,
+                pin_memory=pin_memory,
+                num_workers=num_workers,
+                shuffle=True,
+                worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
+            )
+        if USE_ALEX:
+            self_trainset = get_alexandria_dataloader(
+                cutoff=cutoff,
+                batch_size=train_batch_size,
+                pin_memory=pin_memory,
+                num_workers=num_workers,
+                shuffle=True,
+                worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
+            )
     else:
         self_trainset = None
     if need_scalar_train:
