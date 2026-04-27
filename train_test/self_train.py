@@ -36,6 +36,7 @@ def self_train(
     start_epoch: int = 0,
     resume_from: str = None,
     save_interval: int = 5,
+    batch_save_interval: int = 50000,
     clip_grad_norm: float = 1.0,
     loss_func: str = "huber",
     learning_rate: float = 1e-3,
@@ -242,7 +243,7 @@ def self_train(
                 if has_nan_inf(model):
                     print("Nan or inf detected in model parameters!")
                     print(model.state_dict())
-                    exit(1)
+                    raise ValueError("NaN or inf detected in model parameters!")
                 
                 if torch.isnan(loss):
                     print(f"NaN loss detected at epoch {epoch+1}, batch {num_batches}")
@@ -267,6 +268,36 @@ def self_train(
                 "mse": f"{mse.item():.6f}",
                 "fnorm_err%": f"{mean_fnorm_percent_error.item():.6f}"
             })
+
+            if batch_save_interval and num_batches % batch_save_interval == 0:
+                avg_loss = epoch_loss / num_batches
+                best_loss = min(best_loss, avg_loss)
+                avg_mae = epoch_mae_sum / num_batches
+                avg_mse = epoch_mse_sum / num_batches
+                avg_fnorm_err = epoch_fnorm_err_sum / num_batches
+                train_losses.append(avg_loss)
+                train_mae.append(avg_mae)
+                train_mse.append(avg_mse)
+                train_mean_fnorm_percent_error.append(avg_fnorm_err)
+                checkpoint_data = {
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": opt.state_dict(),
+                    "scheduler_state_dict": sched.state_dict(),
+                    "loss": avg_loss,
+                    "best_loss": best_loss,
+                    "train_losses": train_losses,
+                    "train_mae": train_mae,
+                    "train_mse": train_mse,
+                    "train_mean_fnorm_percent_error": train_mean_fnorm_percent_error,
+                }
+                save_checkpoint(
+                    checkpoint_data=checkpoint_data,
+                    checkpoint_base_dir=checkpoint_dir,
+                    property_name="self_train",
+                    num_epochs=num_epochs,
+                    is_best=False,
+                )
 
         avg_loss = epoch_loss / num_batches
         avg_mae = epoch_mae_sum / num_batches

@@ -178,6 +178,7 @@ class InvariantLayer(nn.Module):
     """
     def __init__(self, update_method: str, scalar_dim: int):
         super().__init__()
+        self.scalar_dim = scalar_dim
         if update_method == 'bias_gat':
             self.layer = BiasGATLayer(scalar_dim)
         elif update_method == 'comformer':

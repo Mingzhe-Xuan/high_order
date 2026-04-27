@@ -6,6 +6,7 @@ from typing import List, Union
 from torch_scatter import scatter
 
 from .utils import add_irreps_tensor
+from .middle_mlp import MiddleMLP
 
 # Deprecated
 # class Model(nn.Module):
@@ -232,3 +233,41 @@ class Model(nn.Module):
             # force_out: (num_nodes, 3)
             force_out = self.readout_layer(atom_feature)
             return force_out
+
+class InvariantOnlyModel(nn.Module):
+    def __init__(
+        self, 
+        embedding_layer: nn.Module = None, 
+        invariant_layers: nn.ModuleList = None, 
+        readout_layer: nn.Module = None
+        ):
+        super().__init__()
+        assert embedding_layer and invariant_layers, "embedding_layer, invariant_layers should be provided"
+        self.embedding_layer = embedding_layer
+        self.invariant_layers = invariant_layers
+        scalar_dim = invariant_layers[-1].scalar_dim
+        if readout_layer is not None:
+            self.readout_layer = readout_layer
+        else:
+            self.readout_layer = nn.Sequential(
+                nn.Linear(scalar_dim, 4 * scalar_dim),
+                nn.SiLU(),
+                nn.Linear(4 * scalar_dim, 1),
+            )
+
+    def forward(self, atom_type, edge_vec, edge_index, batch_index):
+        # atom_feature: (num_nodes, scalar_dim)
+        # edge_feature: (num_edges, scalar_dim)
+        edge_dist = torch.norm(edge_vec, dim=1)
+        atom_feature, edge_feature = self.embedding_layer(atom_type, edge_dist)
+        for invariant_layer in self.invariant_layers:
+            atom_feature, edge_feature = invariant_layer(
+                atom_feature, edge_feature, edge_index
+            )
+        
+        property_feature = self.readout_layer(atom_feature)
+        
+        assert len(property_feature) == len(batch_index), "property_feature and batch_index should have the same length"
+        property_out = scatter(property_feature, batch_index, dim=0, reduce="mean")
+        
+        return property_out

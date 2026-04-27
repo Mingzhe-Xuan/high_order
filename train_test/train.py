@@ -291,6 +291,7 @@ def train(
     weight_decay: float = 1e-5,
     clip_grad_norm: float = 1.0,
     save_interval: int = 5,
+    batch_save_interval: int = None,
     optimizer: str = "adamw",
     scheduler: str = "cosine_annealing",
     warmup_periods: int = 10,
@@ -308,6 +309,9 @@ def train(
     resume_tensor_train: str = None,
     freeze: bool = False,
     use_amp: bool = False,
+    share_middle_mlp: bool = True,
+    scalar_invariant_only: bool = True,
+    only_use_embedding: bool = False,
 ):
     """
     1. self train: emb, inv, eqv, deco, readout - scalar train: emb, inv, deco - tensor train: emb, inv, eqv, deco, readout
@@ -484,8 +488,10 @@ def train(
     )
     print(f"Model parameters summary saved to {checkpoint_dir_with_timestamp}")
     
-    # Clean up temporary components
-    del temp_middle_mlp, temp_final_mlp
+    # # Clean up temporary components
+    # del temp_middle_mlp, temp_final_mlp
+    middle_mlp = temp_middle_mlp
+    final_mlp = temp_final_mlp
 
     # Self train
     scalar_train_history = {}
@@ -535,6 +541,7 @@ def train(
             start_epoch=start_epoch,
             resume_from=resume_self_train,
             save_interval=save_interval,
+            batch_save_interval=batch_save_interval,
             clip_grad_norm=clip_grad_norm,
             loss_func=self_loss_func,
             learning_rate=lr,
@@ -545,14 +552,17 @@ def train(
             limit=self_limit,
             use_amp=use_amp,
         )
-
+        
         embedding_layer = self_trained_model.embedding_layer
-        invariant_layers = self_trained_model.invariant_layers
-        equivariant_layers = self_trained_model.equivariant_layers
+        if not only_use_embedding:
+            invariant_layers = self_trained_model.invariant_layers
+            middle_mlp = self_trained_model.middle_mlp
+            equivariant_layers = self_trained_model.equivariant_layers
 
         if freeze:
             embedding_layer = freeze_parameters(embedding_layer)
             invariant_layers = freeze_parameters(invariant_layers)
+            middle_mlp = freeze_parameters(middle_mlp)
             equivariant_layers = freeze_parameters(equivariant_layers)
 
     if need_scalar_train:
@@ -573,31 +583,59 @@ def train(
         )
 
         for prop in scalar_properties:
-            trained_model, history = scalar_train(
-                property_name=prop,
-                embedding_layer=embedding_layer,
-                invariant_layers=invariant_layers,
-                middle_mlp=scalar_models[prop].middle_mlp,
-                equivariant_layers=equivariant_layers,
-                final_mlp=scalar_models[prop].final_mlp,
-                readout_layer=scalar_models[prop].readout_layer,
-                scalar_trainset=scalar_dataloaders[f"{prop}_trainset"],
-                scalar_valset=scalar_dataloaders[f"{prop}_valset"],
-                num_epochs=scalar_num_epochs,
-                checkpoint_dir=checkpoint_dir,
-                pic_dir=pic_dir,
-                start_epoch=start_epoch,
-                resume_from=resume_scalar_train,
-                save_interval=save_interval,
-                clip_grad_norm=clip_grad_norm,
-                learning_rate=lr,
-                weight_decay=weight_decay,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                loss_func=scalar_loss_func,
-                limit=scalar_limit,
-                use_amp=use_amp,
-            )
+            if share_middle_mlp:
+                trained_model, history = scalar_train(
+                    property_name=prop,
+                    embedding_layer=embedding_layer,
+                    invariant_layers=invariant_layers,
+                    middle_mlp=middle_mlp,
+                    equivariant_layers=equivariant_layers,
+                    final_mlp=scalar_models[prop].final_mlp,
+                    readout_layer=scalar_models[prop].readout_layer,
+                    scalar_trainset=scalar_dataloaders[f"{prop}_trainset"],
+                    scalar_valset=scalar_dataloaders[f"{prop}_valset"],
+                    num_epochs=scalar_num_epochs,
+                    checkpoint_dir=checkpoint_dir,
+                    pic_dir=pic_dir,
+                    start_epoch=start_epoch,
+                    resume_from=resume_scalar_train,
+                    save_interval=save_interval,
+                    clip_grad_norm=clip_grad_norm,
+                    learning_rate=lr,
+                    weight_decay=weight_decay,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    scalar_invariant_only=scalar_invariant_only,
+                    loss_func=scalar_loss_func,
+                    limit=scalar_limit,
+                    use_amp=use_amp,
+                )
+            else:
+                trained_model, history = scalar_train(
+                    property_name=prop,
+                    embedding_layer=embedding_layer,
+                    invariant_layers=invariant_layers,
+                    middle_mlp=scalar_models[prop].middle_mlp,
+                    equivariant_layers=equivariant_layers,
+                    final_mlp=scalar_models[prop].final_mlp,
+                    readout_layer=scalar_models[prop].readout_layer,
+                    scalar_trainset=scalar_dataloaders[f"{prop}_trainset"],
+                    scalar_valset=scalar_dataloaders[f"{prop}_valset"],
+                    num_epochs=scalar_num_epochs,
+                    checkpoint_dir=checkpoint_dir,
+                    pic_dir=pic_dir,
+                    start_epoch=start_epoch,
+                    resume_from=resume_scalar_train,
+                    save_interval=save_interval,
+                    clip_grad_norm=clip_grad_norm,
+                    learning_rate=lr,
+                    weight_decay=weight_decay,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    loss_func=scalar_loss_func,
+                    limit=scalar_limit,
+                    use_amp=use_amp,
+                )
             scalar_models[prop] = trained_model
             scalar_train_history[prop] = history
 
@@ -626,31 +664,58 @@ def train(
         )
 
         for prop in tensor_properties:
-            trained_model, history = tensor_train(
-                property_name=prop,
-                embedding_layer=embedding_layer,
-                invariant_layers=invariant_layers,
-                middle_mlp=tensor_models[prop].middle_mlp,
-                equivariant_layers=equivariant_layers,
-                final_mlp=tensor_models[prop].final_mlp,
-                readout_layer=tensor_models[prop].readout_layer,
-                tensor_trainset=tensor_dataloaders[f"{prop}_trainset"],
-                tensor_valset=tensor_dataloaders[f"{prop}_valset"],
-                num_epochs=tensor_num_epochs,
-                checkpoint_dir=checkpoint_dir,
-                pic_dir=pic_dir,
-                start_epoch=start_epoch,
-                resume_from=resume_tensor_train,
-                save_interval=save_interval,
-                clip_grad_norm=clip_grad_norm,
-                learning_rate=lr,
-                weight_decay=weight_decay,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                loss_func=tensor_loss_func,
-                limit=tensor_limit,
-                use_amp=use_amp,
-            )
+            if share_middle_mlp:
+                trained_model, history = tensor_train(
+                    property_name=prop,
+                    embedding_layer=embedding_layer,
+                    invariant_layers=invariant_layers,
+                    middle_mlp=middle_mlp,
+                    equivariant_layers=equivariant_layers,
+                    final_mlp=tensor_models[prop].final_mlp,
+                    readout_layer=tensor_models[prop].readout_layer,
+                    tensor_trainset=tensor_dataloaders[f"{prop}_trainset"],
+                    tensor_valset=tensor_dataloaders[f"{prop}_valset"],
+                    num_epochs=tensor_num_epochs,
+                    checkpoint_dir=checkpoint_dir,
+                    pic_dir=pic_dir,
+                    start_epoch=start_epoch,
+                    resume_from=resume_tensor_train,
+                    save_interval=save_interval,
+                    clip_grad_norm=clip_grad_norm,
+                    learning_rate=lr,
+                    weight_decay=weight_decay,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    loss_func=tensor_loss_func,
+                    limit=tensor_limit,
+                    use_amp=use_amp,
+                )
+            else:
+                trained_model, history = tensor_train(
+                    property_name=prop,
+                    embedding_layer=embedding_layer,
+                    invariant_layers=invariant_layers,
+                    middle_mlp=tensor_models[prop].middle_mlp,
+                    equivariant_layers=equivariant_layers,
+                    final_mlp=tensor_models[prop].final_mlp,
+                    readout_layer=tensor_models[prop].readout_layer,
+                    tensor_trainset=tensor_dataloaders[f"{prop}_trainset"],
+                    tensor_valset=tensor_dataloaders[f"{prop}_valset"],
+                    num_epochs=tensor_num_epochs,
+                    checkpoint_dir=checkpoint_dir,
+                    pic_dir=pic_dir,
+                    start_epoch=start_epoch,
+                    resume_from=resume_tensor_train,
+                    save_interval=save_interval,
+                    clip_grad_norm=clip_grad_norm,
+                    learning_rate=lr,
+                    weight_decay=weight_decay,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    loss_func=tensor_loss_func,
+                    limit=tensor_limit,
+                    use_amp=use_amp,
+                )
             tensor_models[prop] = trained_model
             tensor_train_history[prop] = history
 

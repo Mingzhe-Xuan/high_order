@@ -200,6 +200,9 @@ def main(
     resume_scalar_train: str = None,
     resume_tensor_train: str = None,
     freeze: bool = False,
+    share_middle_mlp: bool = True,
+    scalar_invariant_only: bool = False,
+    only_use_embedding: bool = False,
 ):
     print("Start running...")
     
@@ -260,8 +263,9 @@ def main(
 
     print("Start loading data...")
     if need_self_train:
-        USE_MP = True
-        USE_ALEX = False
+        USE_MP = False
+        USE_ALEX = not USE_MP
+        assert (USE_MP and not USE_ALEX) or (not USE_MP and USE_ALEX), "Only one of MP and Alexandria can be used for self-training."
         if USE_MP:
             self_trainset = get_mp_dataloader(
                 cutoff=cutoff,
@@ -271,6 +275,7 @@ def main(
                 shuffle=True,
                 worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
             )
+            batch_save_interval = None
         if USE_ALEX:
             self_trainset = get_alexandria_dataloader(
                 cutoff=cutoff,
@@ -280,8 +285,10 @@ def main(
                 shuffle=True,
                 worker_init_fn=lambda worker_id: worker_init_fn(worker_id, seed) if num_workers > 0 else None,
             )
+            batch_save_interval = 10000
     else:
         self_trainset = None
+        batch_save_interval = None
     if need_scalar_train:
         scalar_dataloaders = _create_scalar_dataloaders(
             name_path_dict,
@@ -357,6 +364,7 @@ def main(
         weight_decay=weight_decay,
         clip_grad_norm=clip_grad_norm,
         save_interval=save_interval,
+        batch_save_interval=batch_save_interval,
         optimizer=optimizer,
         scheduler=scheduler,
         warmup_periods=warmup_periods,
@@ -373,6 +381,9 @@ def main(
         resume_scalar_train=resume_scalar_train,
         resume_tensor_train=resume_tensor_train,
         freeze=freeze,
+        share_middle_mlp=share_middle_mlp,
+        scalar_invariant_only=scalar_invariant_only,
+        only_use_embedding=only_use_embedding,
     )
 
     print("Start testing...")

@@ -7,7 +7,7 @@ from tqdm import tqdm
 import os
 from pathlib import Path
 
-from src.model import Model
+from src.model import Model, InvariantOnlyModel
 from data import get_scalar_dataloader
 from src.train_test.utils.visualization import (
     get_visualization_dir,
@@ -78,6 +78,7 @@ def scalar_train(
     loss_func: str = "huber",
     limit: int = None,
     use_amp: bool = True,
+    scalar_invariant_only: bool = True,
 ):
     """
     Train a scalar property prediction model with validation.
@@ -116,14 +117,21 @@ def scalar_train(
     os.makedirs(tensorboard_dir, exist_ok=True)
     writer = SummaryWriter(tensorboard_dir)
     
-    model = Model(
-        embedding_layer,
-        invariant_layers,
-        middle_mlp,
-        equivariant_layers,
-        final_mlp,
-        readout_layer,
-    )
+    if scalar_invariant_only:
+        model = InvariantOnlyModel(
+            embedding_layer,
+            invariant_layers,
+            # readout_layer,
+        )
+    else:
+        model = Model(
+            embedding_layer,
+            invariant_layers,
+            middle_mlp,
+            equivariant_layers,
+            final_mlp,
+            readout_layer,
+        )
     model = model.to(device)
 
     best_loss = float("inf")
