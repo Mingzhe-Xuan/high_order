@@ -43,6 +43,7 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
             edge_vec = batch.edge_vec.to(device)
             batch_index = batch.batch.to(device)
             tensor_property = batch.tensor_property.to(device)
+            property_dim = tuple(range(1, tensor_property.dim()))
 
             pred_tensor_property = model(atom_type, edge_vec, edge_index, batch_index)
             loss = loss_fn(pred_tensor_property, tensor_property)
@@ -50,11 +51,12 @@ def validate_tensor_model(model, val_loader, device, loss_fn):
                 (pred_tensor_property - tensor_property).view(-1).abs().mean()
             )
             mse = (pred_tensor_property - tensor_property).view(-1).pow(2).mean()
-            fnorm_error = abs(
-                torch.norm(pred_tensor_property, dim=-1)
-                - torch.norm(tensor_property, dim=-1)
-            )
-            fnorm = torch.norm(tensor_property, dim=-1)
+            # fnorm_error = abs(
+            #     torch.norm(pred_tensor_property, dim=-1)
+            #     - torch.norm(tensor_property, dim=-1)
+            # )
+            fnorm_error = torch.norm(pred_tensor_property - tensor_property, dim=property_dim)
+            fnorm = torch.norm(tensor_property, dim=property_dim)
             mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
             
             val_loss += loss.item()
