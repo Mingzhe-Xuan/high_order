@@ -44,9 +44,10 @@ def calculate_tensor_metrics(y_true, y_pred):
     pointwise_mae = (y_pred - y_true).view(-1).abs().mean()
 
     # (num_strctures,)
-    fnorm_error = torch.abs(
-        torch.norm(y_pred, dim=property_dim) - torch.norm(y_true, dim=property_dim)
-    )
+    # fnorm_error = torch.abs(
+    #     torch.norm(y_pred, dim=property_dim) - torch.norm(y_true, dim=property_dim)
+    # )
+    fnorm_error = torch.norm(y_pred - y_true, dim=property_dim)
     # scalar
     mean_fnorm_error = fnorm_error.mean()
     # (num_strctures,)
