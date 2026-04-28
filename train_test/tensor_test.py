@@ -170,7 +170,7 @@ def tensor_test(
             metrics = calculate_tensor_metrics(all_true_values, all_pred_values)
             avg_loss = total_loss / num_batches
 
-            print(f"\nTensor Test Results for {prop}:")
+            print(f"\nTensor Test Results for {prop} (without mask):")
             print(f"  Average Loss: {avg_loss:.6f}")
             print(f"  MAE: {metrics['mae']:.6f}")
             print(f"  MSE: {metrics['mse']:.6f}")
@@ -183,12 +183,33 @@ def tensor_test(
             print(f"  EwT_10: {metrics['EwT_10']:.2f}%")
             print(f"  EwT_5: {metrics['EwT_5']:.2f}%")
 
-            results[prop] = {
-                "avg_loss": avg_loss,
-                "metrics": metrics,
-                "true_values": all_true_values,
-                "predicted_values": all_pred_values,
-            }
+            # # For experiment: mask out the zero values
+            # zero_mask = torch.ones_like(all_true_values)
+            # zero_mask[all_true_values == 0] = 0
+            # all_pred_values = all_pred_values * zero_mask
+
+            # metrics = calculate_tensor_metrics(all_true_values, all_pred_values)
+            # avg_loss = total_loss / num_batches
+
+            # print(f"\nTensor Test Results for {prop} (with mask):")
+            # print(f"  Average Loss: {avg_loss:.6f}")
+            # print(f"  MAE: {metrics['mae']:.6f}")
+            # print(f"  MSE: {metrics['mse']:.6f}")
+            # print(f"  RMSE: {metrics['rmse']:.6f}")
+            # print(f"  Pointwise MAE: {metrics['pointwise_mae']:.6f}")
+            # print(f"  Mean FNORM Error: {metrics['mean_fnorm_error']:.6f}")
+            # print(f"  Mean FNORM % Error: {metrics['mean_fnorm_percent_error']:.6f}%")
+            # print(f"  MAPE: {metrics['mape']:.6f}%")
+            # print(f"  EwT_25: {metrics['EwT_25']:.2f}%")
+            # print(f"  EwT_10: {metrics['EwT_10']:.2f}%")
+            # print(f"  EwT_5: {metrics['EwT_5']:.2f}%")
+
+            # results[prop] = {
+            #     "avg_loss": avg_loss,
+            #     "metrics": metrics,
+            #     "true_values": all_true_values,
+            #     "predicted_values": all_pred_values,
+            # }
 
             property_vis_dir = os.path.join(vis_dir, prop)
 
