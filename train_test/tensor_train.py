@@ -326,12 +326,14 @@ def tensor_train(
                 - torch.norm(tensor_property, dim=-1)
             )
             fnorm = torch.norm(tensor_property, dim=-1)
+            mean_fnorm = fnorm.mean()
             mean_fnorm_percent_error = (fnorm_error / (fnorm + 1e-8)).mean()
 
             epoch_loss += loss.item()
             epoch_mae_sum += pointwise_mae.item()
             epoch_pointwise_mae_sum += pointwise_mae.item()
             epoch_mse_sum += mse.item()
+            epoch_mean_fnorm_sum += mean_fnorm.item()
             epoch_fnorm_err_sum += mean_fnorm_percent_error.item()
             num_batches += 1
 
@@ -339,13 +341,14 @@ def tensor_train(
                 "loss": f"{loss.item():.6f}", 
                 "mae": f"{pointwise_mae.item():.6f}",
                 "mse": f"{mse.item():.6f}",
-                "fnorm_err%": f"{mean_fnorm_percent_error.item():.6f}"
+                "fnorm": f"{mean_fnorm.item():.6f}"
             })
 
         avg_loss = epoch_loss / num_batches
         avg_mae = epoch_mae_sum / num_batches
         avg_pointwise_mae = epoch_pointwise_mae_sum / num_batches
         avg_mse = epoch_mse_sum / num_batches
+        avg_mean_fnorm = epoch_mean_fnorm_sum / num_batches
         avg_fnorm_err = epoch_fnorm_err_sum / num_batches
         
         train_losses.append(avg_loss)

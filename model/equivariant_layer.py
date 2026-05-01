@@ -236,6 +236,8 @@ class TpconvLayer(BaseEquivariantLayer):
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
         # edge_vector: (num_edges, 3)
+        # edge_dist: (num_edges, )
+        edge_dist = torch.norm(edge_vector, dim=-1)
         # edge_sh: (num_edges, irreps_vec.dim)
         edge_sh = self.compute_spherical_harmonics(edge_vector)
         # edge_index: (2, num_edges)
@@ -296,7 +298,19 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         if self.irreps_in.lmax == 0:
             self.tp = get_tp("fully_connected", self.irreps_in, self.irreps_out, self.irreps_out)
         else:
-            self.tp = get_tp(tp_method, self.irreps_in, self.irreps_in, self.irreps_out)
+            self.tp = get_tp(tp_method, self.irreps_in, self.irreps_out, self.irreps_out, latent_dim=self.irreps_in.dim)
+        if self.irreps_in.lmax == 0:
+            weight_dim = self.tp.weight_numel
+        elif tp_method == "so2":
+            weight_dim = self.irreps_in.dim
+        else:
+            weight_dim = self.tp.weight_numel
+        self.weight_linear = nn.Sequential(
+            nn.Linear(self.irreps_in.dim, 4 * self.irreps_in.dim),
+            nn.ReLU(),
+            nn.Linear(4 * self.irreps_in.dim, weight_dim),
+        )
+        # self.weight_linear = nn.Linear(self.irreps_in.dim, weight_dim)
         self.norm = SeperableLayerNorm(self.irreps_out)
         self.final_mlp = FinalMLP(self.irreps_out, self.irreps_out, self.irreps_hidden, num_hidden_layers=1)
 
@@ -308,6 +322,8 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         edge_feature: torch.Tensor,
     ) -> torch.Tensor:
         # edge_feature: (num_edges, irreps_in.dim)
+        # weight: (num_edges, weight_num)
+        weight = self.weight_linear(edge_feature)
         # edge_index: (2, num_edges)
         # src, dst: (num_edges, )
         src, dst = edge_index
@@ -316,16 +332,23 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
         # dst_feature: (num_edges, irreps_in.dim)
         dst_feature = atom_feature[dst]
         # message: (num_edges, irreps_out.dim)
-        if self.irreps_in.lmax == 0:
-            edge_sh = self.compute_spherical_harmonics(edge_vector, self.irreps_out)
-            message = self.tp(src_feature, edge_sh)
+        # if self.irreps_in.lmax == 0:
+        #     edge_sh = self.compute_spherical_harmonics(edge_vector, self.irreps_out)
+        #     message = self.tp(src_feature, edge_sh, weight)
+        # else:
+        #     message = self.tp(src_feature, edge_feature)
+        edge_sh = self.compute_spherical_harmonics(edge_vector, self.irreps_out)
+        if self.tp_method == "so2" and self.irreps_in.lmax != 0:
+            edge_vector_so2 = edge_vector.clone()
+            message = self.tp(src_feature, edge_vector_so2, latents=weight)
         else:
-            message = self.tp(src_feature, edge_feature)
+            message = self.tp(src_feature, edge_sh, weight)
         # atom_feature: (num_nodes, irreps_out.dim)
         num_nodes = atom_feature.size(0)
         aggregated_message = self.aggregate_messages(
             message, dst, num_nodes, atom_feature.device, atom_feature.dtype
         )
+        # # NORM OR NOT? NORM!
         aggregated_message = self.norm(aggregated_message)
         if self.residual:
             # atom_feature = add_irreps_tensor(

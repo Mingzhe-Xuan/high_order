@@ -263,7 +263,7 @@ def main(
 
     print("Start loading data...")
     if need_self_train:
-        USE_MP = False
+        USE_MP = True
         USE_ALEX = not USE_MP
         assert (USE_MP and not USE_ALEX) or (not USE_MP and USE_ALEX), "Only one of MP and Alexandria can be used for self-training."
         if USE_MP:

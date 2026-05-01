@@ -155,6 +155,10 @@ def scalar_train(
     else:
         raise NotImplementedError(f"optimizer {optimizer} is not implemented")
 
+    # if scheduler == "cosine_annealing":
+    #     sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
+    # elif scheduler == "cosine_warm_restarts":
+    #     sched = optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=num_epochs // 2, T_mult=2, eta_min=1e-6)
     if scheduler == "cosine_annealing" or scheduler == "cosine_warm_restarts":
         sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_epochs)
     elif scheduler == "step":

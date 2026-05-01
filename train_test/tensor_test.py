@@ -61,8 +61,11 @@ def calculate_tensor_metrics(y_true, y_pred):
     # batchwise_percent_error = batchwise_rsse / (batchwise_sum_fnorm + 1e-8)
     # (num_strctures,)
     sse = ((y_pred - y_true) ** 2).sum(dim=property_dim)
-    # (num_strctures,)
-    percent_error = sse / (fnorm ** 2 + 1e-8)
+    # # (num_strctures,)
+    # -----------------------------------------
+    # percent_error = sse / (fnorm ** 2 + 1e-8)
+    percent_error = (fnorm_error / (fnorm + 1e-8))
+    # -----------------------------------------
     # High Quality Prediction Rate (EwT)
     # scalar
     EwT_25 = (percent_error < 0.25).sum() / num_structures * 100

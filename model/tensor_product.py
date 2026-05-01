@@ -200,8 +200,9 @@ class SO2_Linear(torch.nn.Module):
 
         self.m_in_index = [0] + list(torch.cumsum(torch.tensor(self.m_in_num), dim=0))
         if radial_emb:
+            rc = radial_channels if radial_channels is not None else []
             self.radial_emb = RadialFunction(
-                [latent_dim] + radial_channels + [self.m_in_index[-1]]
+                [latent_dim] + rc + [self.m_in_index[-1]]
             )
         self.front = front
 
@@ -413,7 +414,7 @@ class RadialFunction(nn.Module):
         return self.net(inputs)
 
 
-def get_tp(method: str, irreps_in1: Irreps, irreps_in2: Irreps, irreps_out: Irreps):
+def get_tp(method: str, irreps_in1: Irreps, irreps_in2: Irreps, irreps_out: Irreps, latent_dim: int = None):
     triangular_ineq = (
         abs(irreps_in1.lmax - irreps_in2.lmax)
         <= irreps_out.lmax
@@ -422,13 +423,16 @@ def get_tp(method: str, irreps_in1: Irreps, irreps_in2: Irreps, irreps_out: Irre
     warning = "Input irreps do not satisfy the triangular inequality."
     if method == "fully_connected":
         assert triangular_ineq, warning
-        return FullyConnectedTensorProduct(irreps_in1, irreps_in2, irreps_out)
+        return FullyConnectedTensorProduct(irreps_in1, irreps_in2, irreps_out, shared_weights=False)
     elif method == "elementwise":
         assert triangular_ineq, warning
-        return ElementwiseTensorProduct(irreps_in1, irreps_in2, irreps_out)
+        return ElementwiseTensorProduct(irreps_in1, irreps_in2, irreps_out, shared_weights=False)
     elif method == "so2":
         if irreps_in1 != irreps_in2:
             Warning("SO2 linear only support one input.")
-        return SO2_Linear(irreps_in1, irreps_out)
+        if latent_dim is not None:
+            return SO2_Linear(irreps_in1, irreps_out, radial_emb=True, latent_dim=latent_dim)
+        else:
+            return SO2_Linear(irreps_in1, irreps_out)
     else:
         raise NotImplementedError(f"Tensor product method {method} not implemented")
