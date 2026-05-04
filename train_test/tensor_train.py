@@ -254,6 +254,7 @@ def tensor_train(
         epoch_mae_sum = 0.0
         epoch_pointwise_mae_sum = 0.0
         epoch_mse_sum = 0.0
+        epoch_mean_fnorm_sum = 0.0
         epoch_fnorm_err_sum = 0.0
         num_batches = 0
 
