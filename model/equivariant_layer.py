@@ -310,6 +310,11 @@ class TpconvWithEdgeLayer(BaseEquivariantLayer):
             nn.ReLU(),
             nn.Linear(4 * self.irreps_in.dim, weight_dim),
         )
+        # self.weight_linear = nn.Sequential(
+        #     nn.Linear(self.irreps_in.dim, self.irreps_in.dim),
+        #     nn.Softplus(),
+        #     nn.Linear(self.irreps_in.dim, weight_dim),
+        # )
         # self.weight_linear = nn.Linear(self.irreps_in.dim, weight_dim)
         self.norm = SeperableLayerNorm(self.irreps_out)
         self.final_mlp = FinalMLP(self.irreps_out, self.irreps_out, self.irreps_hidden, num_hidden_layers=1)
