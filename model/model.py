@@ -183,7 +183,8 @@ class Model(nn.Module):
 
         self.embedding_layer = embedding_layer
         self.invariant_layers = invariant_layers
-        self.middle_mlp = middle_mlp
+        self.atom_middle_mlp = middle_mlp
+        self.edge_middle_mlp = middle_mlp
         self.equivariant_layers = equivariant_layers
         self.final_mlp = final_mlp
         self.readout_layer = readout_layer
@@ -201,8 +202,8 @@ class Model(nn.Module):
                 atom_feature, edge_feature, edge_index
             )
 
-        atom_feature = self.middle_mlp(atom_feature)
-        edge_feature = self.middle_mlp(edge_feature)
+        atom_feature = self.atom_middle_mlp(atom_feature)
+        edge_feature = self.edge_middle_mlp(edge_feature)
 
         atom_feature_list = [atom_feature]
         edge_feature_list = [edge_feature]
@@ -218,15 +219,17 @@ class Model(nn.Module):
         edge_feature = self.final_mlp(edge_feature)
         edge_feature_list.append(edge_feature)
         atom_feature_list.append(atom_feature)
-        self.irreps_list.append(self.final_mlp.irreps_out)
 
         if not self.self_train:
             if not self.final_pooling:
-                global_feature = add_irreps_tensor(
+                self.irreps_list.append(self.final_mlp.irreps_out)
+                atom_feature = add_irreps_tensor(
                     self.irreps_list, atom_feature_list
                 ) / len(atom_feature_list)
+                global_feature = scatter(atom_feature, batch_index, dim=0, reduce="mean")
             # global_feature: (num_graphs, irreps_out.dim)
-            global_feature = scatter(atom_feature, batch_index, dim=0, reduce="mean")
+            else:
+                global_feature = scatter(atom_feature, batch_index, dim=0, reduce="mean")
             property_out = self.readout_layer(global_feature)
             return property_out
         else:
